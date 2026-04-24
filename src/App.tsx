@@ -54,7 +54,10 @@ import {
   CalendarDays,
   CalendarPlus,
   ArrowRight,
-  UserPlus
+  UserPlus,
+  Check,
+  TrendingUp,
+  ArrowLeft
 } from 'lucide-react';
 import { Guest, Room, Booking, AuthState, InventoryItem, RoomType, ItemCategory, Charge, Transaction, AppUser, UserRole } from './types.ts';
 
@@ -565,69 +568,291 @@ export default function App() {
 
   const formatPrice = (p: number) => `R$ ${p.toFixed(2).replace('.', ',')}`;
 
+  const [isLanding, setIsLanding] = useState(true);
+  const [landingView, setLandingView] = useState<'home' | 'pricing' | 'register' | 'login'>('home');
+  const [registerData, setRegisterData] = useState({ hotelName: '', email: '', plan: 'monthly' });
+
+  const handleRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newUser = {
+      username: registerData.email.split('@')[0],
+      password: '123', // Default for demo
+      role: 'admin' as const,
+      name: registerData.hotelName
+    };
+    setUsers([...users, newUser]);
+    setError('Conta criada! Use seu email (até o @) e senha "123" para entrar.');
+    setLandingView('login');
+  };
+
   if (!auth.isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-bg-surface flex items-center justify-center p-6">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm bg-white p-10 rounded-xl border border-slate-200 shadow-sm transition-all">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-lg">
-              <Hotel size={24} strokeWidth={2.5} />
+    if (landingView === 'home') {
+      return (
+        <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900">
+          {/* Nav */}
+          <nav className="flex items-center justify-between px-10 py-6 max-w-7xl mx-auto">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-lg">
+                <Hotel size={24} strokeWidth={2.5} />
+              </div>
+              <span className="text-xl font-black tracking-tight">Meu Hotel</span>
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900">Meu Hotel</h1>
-          </div>
-          
-          {!isRecovering ? (
-            <>
-              <h2 className="text-xl font-semibold mb-2">Entrar no Sistema</h2>
-              <p className="text-sm text-slate-500 mb-8">Administração Hoteleira</p>
-              <form onSubmit={handleLogin} className="space-y-5">
-                <div className="space-y-1.5"><label className="text-xs font-semibold text-slate-700">USUÁRIO</label><input type="text" className="minimal-input" placeholder="Seu usuário" value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} /></div>
-                <div className="space-y-1.5"><label className="text-xs font-semibold text-slate-700">SENHA</label><input type="password" underline-none className="minimal-input" placeholder="••••••••" value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} /></div>
-                <div className="flex justify-between items-center">
-                  {error && <p className={`text-xs font-medium ${error.includes('sucesso') ? 'text-emerald-500' : 'text-red-500'}`}>{error}</p>}
-                  <button type="button" onClick={() => { setIsRecovering(true); setError(''); }} className="text-[10px] text-slate-400 font-bold uppercase tracking-widest hover:text-slate-600 transition-colors ml-auto">Esqueci a senha</button>
+            <div className="flex items-center gap-6">
+              <button onClick={() => setLandingView('pricing')} className="text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors">Preços</button>
+              <button onClick={() => setLandingView('login')} className="px-6 py-2.5 text-sm font-bold bg-slate-900 text-white rounded-xl shadow-lg hover:bg-slate-800 transition-all">Acessar Sistema</button>
+            </div>
+          </nav>
+
+          {/* Hero */}
+          <main className="max-w-7xl mx-auto px-10 pt-20 pb-32">
+            <div className="grid lg:grid-cols-2 gap-20 items-center">
+              <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-6">
+                  <div className="w-1 h-1 bg-blue-600 rounded-full animate-ping" />
+                  Sistema de Gestão Hoteleira Pro
                 </div>
-                <button type="submit" className="minimal-btn w-full mt-4">Acessar Painel</button>
-              </form>
-            </>
-          ) : (
-            <>
-              <h2 className="text-xl font-semibold mb-2">Recuperar Admin</h2>
-              <p className="text-sm text-slate-500 mb-8">
-                {recoveryStep === 'username' ? 'Identifique sua conta master' : 'Autentique com a Chave Mestra'}
-              </p>
-              <form onSubmit={handleAdminRecovery} className="space-y-5">
-                {recoveryStep === 'username' ? (
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-tighter">Login do Administrador</label>
-                    <input type="text" required className="minimal-input" placeholder="Ex: admin" value={recoveryUsername} onChange={e => setRecoveryUsername(e.target.value)} />
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-700 uppercase tracking-tighter">Chave Mestra de Segurança</label>
-                      <input type="password" required className="minimal-input" placeholder="Código de 6 dígitos" value={masterKey} onChange={e => setMasterKey(e.target.value)} />
-                      <p className="text-[9px] text-slate-400 italic">Solicite a chave ao desenvolvedor do sistema.</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-700 uppercase tracking-tighter">Nova Senha</label>
-                      <input type="password" required className="minimal-input font-mono" placeholder="••••••••" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                    </div>
-                  </>
-                )}
-                {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
-                <div className="flex gap-3 pt-4">
-                  <button type="button" onClick={() => { setIsRecovering(false); setRecoveryStep('username'); setError(''); }} className="flex-1 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 rounded-xl hover:bg-slate-100 transition-all text-center">Voltar</button>
-                  <button type="submit" className="flex-[2] py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all uppercase text-[10px] tracking-widest shadow-lg shadow-slate-100">
-                    {recoveryStep === 'username' ? 'Continuar' : 'Resetar Senha'}
+                <h1 className="text-7xl font-black tracking-tight text-slate-900 leading-[0.9] mb-8">
+                  Controle seu hotel com <span className="text-blue-600">simplicidade.</span>
+                </h1>
+                <p className="text-xl text-slate-500 font-medium leading-relaxed mb-10 max-w-lg">
+                  Gestão de quartos, estoque, financeiro e hóspedes em uma interface rápida e intuitiva. Feito para crescer com você.
+                </p>
+                <div className="flex gap-4">
+                  <button onClick={() => setLandingView('pricing')} className="px-10 py-5 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 transition-all shadow-2xl shadow-blue-200">
+                    Começar agora
+                  </button>
+                  <button onClick={() => setLandingView('login')} className="px-10 py-5 bg-white text-slate-900 border border-slate-200 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-slate-50 transition-all">
+                    Já sou cliente
                   </button>
                 </div>
-              </form>
-            </>
-          )}
-        </motion.div>
-      </div>
-    );
+              </motion.div>
+
+              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative">
+                <div className="absolute -inset-4 bg-blue-500/10 blur-3xl rounded-full" />
+                <div className="relative bg-white p-3 rounded-[32px] border border-slate-100 shadow-2xl rotate-2 overflow-hidden aspect-video group">
+                  <div className="flex h-full gap-2">
+                    {/* Mock Sidebar */}
+                    <div className="w-16 h-full bg-slate-50 rounded-2xl flex flex-col items-center py-4 gap-4">
+                      <div className="w-8 h-8 bg-slate-900 rounded-lg" />
+                      <div className="w-8 h-1.5 bg-slate-200 rounded-full" />
+                      <div className="w-8 h-1.5 bg-slate-200 rounded-full" />
+                      <div className="w-8 h-1.5 bg-slate-200 rounded-full" />
+                    </div>
+                    {/* Mock Content */}
+                    <div className="flex-1 space-y-4 pr-2">
+                      <div className="flex justify-between items-center mt-2">
+                        <div className="h-4 w-24 bg-slate-100 rounded-full" />
+                        <div className="h-6 w-16 bg-blue-100 rounded-full" />
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { s: 'occupied', n: '101' }, { s: 'vago', n: '102' }, { s: 'occupied', n: '103' }, { s: 'sujo', n: '104' },
+                          { s: 'vago', n: '201' }, { s: 'occupied', n: '202' }, { s: 'vago', n: '203' }, { s: 'occupied', n: '204' }
+                        ].map((r, idx) => (
+                          <div key={idx} className={`aspect-square rounded-xl p-2 flex flex-col justify-between border ${r.s === 'occupied' ? 'bg-blue-50 border-blue-100' : r.s === 'sujo' ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-100'}`}>
+                            <div className="text-[6px] font-black uppercase text-slate-400">{r.n}</div>
+                            <div className={`w-1.5 h-1.5 rounded-full ${r.s === 'occupied' ? 'bg-blue-500' : r.s === 'sujo' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 pb-2">
+                         <div className="h-10 bg-slate-50 rounded-xl" />
+                         <div className="h-10 bg-slate-50 rounded-xl" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="absolute top-1/2 -left-10 bg-white p-6 rounded-3xl shadow-2xl border border-slate-50 -rotate-3 animate-bounce">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white"><Check size={16} /></div>
+                    <div>
+                      <div className="text-[10px] font-black uppercase text-slate-400">Check-in Concluído</div>
+                      <div className="text-sm font-black text-slate-900">Quarto 102</div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+
+            {/* Features Preview */}
+            <div className="grid md:grid-cols-3 gap-8 mt-40">
+              {[
+                { title: 'Mapa Digital', desc: 'Visualize o status de todos os quartos em tempo real.', icon: <LayoutGrid size={24} /> },
+                { title: 'Financeiro', desc: 'Fluxo de caixa, vendas e lucros detalhados por período.', icon: <TrendingUp size={24} /> },
+                { title: 'Estoque Inteligente', desc: 'Gerencie insumos e serviços com baixa automática.', icon: <Package size={24} /> }
+              ].map((f, i) => (
+                <div key={i} className="p-10 bg-white rounded-[32px] border border-slate-100 hover:border-blue-100 hover:shadow-xl transition-all group">
+                  <div className="w-14 h-14 bg-slate-50 text-slate-900 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    {f.icon}
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900 mb-2">{f.title}</h3>
+                  <p className="text-slate-500 font-medium leading-relaxed">{f.desc}</p>
+                </div>
+              ))}
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    if (landingView === 'pricing') {
+      return (
+        <div className="min-h-screen bg-white">
+          <nav className="flex items-center justify-between px-10 py-6 max-w-7xl mx-auto">
+            <button onClick={() => setLandingView('home')} className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-slate-900 transition-colors">
+              <ArrowLeft size={16} /> Voltar para o início
+            </button>
+          </nav>
+          
+          <main className="max-w-5xl mx-auto px-10 pt-20 pb-40">
+            <div className="text-center mb-20">
+              <h2 className="text-5xl font-black tracking-tight text-slate-900 mb-4">Escolha seu plano</h2>
+              <p className="text-slate-500 font-medium">Gestão profissional sem letras miúdas. Cancele quando quiser.</p>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              {[
+                { name: 'Mensal', price: '49,90', period: 'mês', color: 'slate' },
+                { name: 'Trimestral', price: '129,90', period: 'trimestre', color: 'blue', popular: true },
+                { name: 'Anual', price: '529,90', period: 'ano', color: 'slate' },
+              ].map((p, i) => (
+                <div key={i} className={`relative p-10 rounded-[40px] border-2 transition-all ${p.popular ? 'border-blue-600 bg-blue-600 text-white shadow-2xl scale-105' : 'border-slate-100 bg-white text-slate-900 hover:border-slate-300'}`}>
+                  {p.popular && (
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 px-4 py-1 bg-blue-100 text-blue-600 text-[10px] font-black uppercase tracking-widest rounded-full">
+                      Mais Popular
+                    </div>
+                  )}
+                  <h3 className={`text-xl font-black mb-1 ${p.popular ? 'text-blue-100' : 'text-slate-400'}`}>{p.name}</h3>
+                  <div className="flex items-baseline gap-1 mb-8">
+                    <span className="text-sm font-bold">R$</span>
+                    <span className="text-5xl font-black tracking-tighter">{p.price}</span>
+                    <span className={`text-sm font-bold ${p.popular ? 'opacity-60' : 'text-slate-400'}`}>/{p.period}</span>
+                  </div>
+                  <ul className="space-y-4 mb-10">
+                    {['Gestão Completa', 'Financeiro Pro', 'Acesso Multi-usuário', 'Suporte VIP'].map((item, idx) => (
+                      <li key={idx} className="flex items-center gap-3 text-sm font-bold">
+                        <Check size={16} className={p.popular ? 'text-blue-200' : 'text-blue-600'} /> {item}
+                      </li>
+                    ))}
+                  </ul>
+                  <button 
+                    onClick={() => { setRegisterData({...registerData, plan: p.name.toLowerCase()}); setLandingView('register'); }}
+                    className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${p.popular ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                  >
+                    Começar Grátis
+                  </button>
+                </div>
+              ))}
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    if (landingView === 'register') {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-white p-12 rounded-[40px] shadow-2xl border border-slate-100">
+            <h2 className="text-3xl font-black text-slate-900 mb-2">Criar conta</h2>
+            <p className="text-sm text-slate-500 font-medium mb-10">Cadastre seu hotel no plano selecionado.</p>
+            
+            <form onSubmit={handleRegister} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NOME DO HOTEL / POUSADA</label>
+                <input required type="text" className="minimal-input" placeholder="Ex: Palace Hotel" value={registerData.hotelName} onChange={e => setRegisterData({...registerData, hotelName: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">EMAIL ADMINISTRATIVO</label>
+                <input required type="email" className="minimal-input" placeholder="seu@email.com" value={registerData.email} onChange={e => setRegisterData({...registerData, email: e.target.value})} />
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex justify-between items-center">
+                <div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Plano Selecionado</div>
+                  <div className="text-sm font-black text-slate-900 uppercase tracking-tighter">{registerData.plan}</div>
+                </div>
+                <button type="button" onClick={() => setLandingView('pricing')} className="text-[10px] font-black text-blue-600 uppercase tracking-widest underline">Alterar</button>
+              </div>
+              <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-100 mt-4">
+                Assinar e Criar Painel
+              </button>
+              <button type="button" onClick={() => setLandingView('login')} className="w-full text-center text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">Já tenho conta</button>
+            </form>
+          </motion.div>
+        </div>
+      );
+    }
+
+    if (landingView === 'login') {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm bg-white p-10 rounded-xl border border-slate-200 shadow-sm transition-all overflow-hidden">
+            <div className="flex items-center gap-3 mb-10">
+              <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-lg">
+                <Hotel size={24} strokeWidth={2.5} />
+              </div>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900">Meu Hotel</h1>
+            </div>
+            
+            {!isRecovering ? (
+              <>
+                <h2 className="text-xl font-semibold mb-2">Entrar no Sistema</h2>
+                <p className="text-sm text-slate-500 mb-8 font-medium">Acesso restrito ao administrativo</p>
+                <form onSubmit={handleLogin} className="space-y-5">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">USUÁRIO / EMAIL</label>
+                    <input type="text" className="minimal-input" placeholder="Seu usuário" value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">SENHA</label>
+                    <input type="password" underline-none className="minimal-input" placeholder="••••••••" value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    {error && <p className={`text-[10px] font-black uppercase tracking-tight ${error.includes('sucesso') ? 'text-emerald-500' : 'text-red-500'}`}>{error}</p>}
+                    <button type="button" onClick={() => { setIsRecovering(true); setError(''); }} className="text-[9px] text-slate-400 font-bold uppercase tracking-widest hover:text-slate-600 transition-colors ml-auto">Esqueci a senha</button>
+                  </div>
+                  <button type="submit" className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95 mt-4">Acessar Painel</button>
+                </form>
+                <button onClick={() => setLandingView('home')} className="w-full mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Voltar para o site</button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-xl font-semibold mb-2">Recuperar Acesso</h2>
+                <p className="text-sm text-slate-500 mb-8 font-medium">
+                  {recoveryStep === 'username' ? 'Identifique sua conta master' : 'Autentique com a Chave Mestra'}
+                </p>
+                <form onSubmit={handleAdminRecovery} className="space-y-5">
+                  {recoveryStep === 'username' ? (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Login de Administrador</label>
+                      <input type="text" required className="minimal-input" placeholder="Ex: admin" value={recoveryUsername} onChange={e => setRecoveryUsername(e.target.value)} />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Chave Mestra de Segurança</label>
+                        <input type="password" required className="minimal-input" placeholder="Código de 6 dígitos" value={masterKey} onChange={e => setMasterKey(e.target.value)} />
+                        <p className="text-[9px] text-slate-400 italic">Solicite a chave ao desenvolvedor do sistema.</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nova Senha de Acesso</label>
+                        <input type="password" required className="minimal-input" placeholder="••••••••" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                      </div>
+                    </>
+                  )}
+                  {error && <p className="text-[10px] font-black text-red-500 uppercase tracking-tight">{error}</p>}
+                  <div className="flex gap-3 pt-4">
+                    <button type="button" onClick={() => { setIsRecovering(false); setRecoveryStep('username'); setError(''); }} className="flex-1 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 rounded-2xl hover:bg-slate-100 transition-all text-center">Cancelar</button>
+                    <button type="submit" className="flex-[2] py-4 bg-slate-900 text-white font-bold rounded-2xl hover:bg-slate-800 transition-all uppercase text-[10px] tracking-widest shadow-lg">
+                      {recoveryStep === 'username' ? 'Procurar' : 'Resetar Senha'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </motion.div>
+        </div>
+      );
+    }
   }
 
   return (
