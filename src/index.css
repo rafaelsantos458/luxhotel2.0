@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --color-brand-primary: #111827;
+  --color-brand-accent: #3b82f6;
+  --color-bg-surface: #f9fafb;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-bg-surface text-slate-900 antialiased;
+  }
+}
+
+@layer components {
+  .minimal-card {
+    @apply bg-white rounded-xl border border-slate-200 shadow-[0_1px_3px_0_rgba(0,0,0,0.05)];
+  }
+
+  .card-label {
+    @apply text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-4 block;
+  }
+
+  .minimal-input {
+    @apply w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-blue-500 focus:ring-0 outline-none transition-colors;
+  }
+
+  .minimal-btn {
+    @apply bg-slate-900 text-white text-sm font-semibold py-2 px-4 rounded-lg hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-0 py-2.5 text-sm text-slate-500 hover:text-slate-900 transition-colors cursor-pointer;
+  }
+
+  .sidebar-item.active {
+    @apply text-slate-900 font-semibold;
+  }
+
+  .sidebar-dot {
+    @apply w-1.5 h-1.5 rounded-full bg-blue-500 opacity-0 transition-opacity;
+  }
+
+  .sidebar-item.active .sidebar-dot {
+    @apply opacity-100;
+  }
+}
