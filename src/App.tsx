@@ -588,107 +588,145 @@ export default function App() {
   if (!auth.isAuthenticated) {
     if (landingView === 'home') {
       return (
-        <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900">
+        <div className="min-h-screen bg-[#fafafc] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+          {/* Progress Bar for aesthetic */}
+          <div className="fixed top-0 left-0 w-full h-1.5 bg-indigo-50 z-50 overflow-hidden">
+            <motion.div 
+              initial={{ x: '-100%' }}
+              animate={{ x: '100%' }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
+              className="w-1/3 h-full bg-indigo-600"
+            />
+          </div>
+
           {/* Nav */}
-          <nav className="flex items-center justify-between px-10 py-6 max-w-7xl mx-auto">
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-lg">
-                <Hotel size={24} strokeWidth={2.5} />
+          <nav className="flex items-center justify-between px-10 py-8 max-w-7xl mx-auto">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-[0_10px_20px_-5px_rgba(0,0,0,0.3)]">
+                <Hotel size={26} strokeWidth={2.5} />
               </div>
-              <span className="text-xl font-black tracking-tight">Meu Hotel</span>
+              <span className="text-2xl font-black tracking-tighter"> Meu Hotel <span className="text-indigo-600">PRO</span></span>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-8">
               <button onClick={() => setLandingView('pricing')} className="text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors">Preços</button>
-              <button onClick={() => setLandingView('login')} className="px-6 py-2.5 text-sm font-bold bg-slate-900 text-white rounded-xl shadow-lg hover:bg-slate-800 transition-all">Acessar Sistema</button>
+              <button onClick={() => setLandingView('login')} className="px-8 py-3 text-sm font-bold bg-slate-900 text-white rounded-2xl shadow-xl hover:bg-slate-800 transition-all hover:translate-y-[-2px] active:scale-95">Acessar Painel</button>
             </div>
           </nav>
 
           {/* Hero */}
-          <main className="max-w-7xl mx-auto px-10 pt-20 pb-32">
-            <div className="grid lg:grid-cols-2 gap-20 items-center">
-              <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-6">
-                  <div className="w-1 h-1 bg-blue-600 rounded-full animate-ping" />
-                  Sistema de Gestão Hoteleira Pro
+          <main className="max-w-7xl mx-auto px-10 pt-24 pb-40">
+            <div className="grid lg:grid-cols-2 gap-24 items-center">
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[11px] font-black uppercase tracking-widest mb-8 border border-indigo-100/50">
+                  <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse" />
+                  Plataforma de Gestão 2024
                 </div>
-                <h1 className="text-7xl font-black tracking-tight text-slate-900 leading-[0.9] mb-8">
-                  Controle seu hotel com <span className="text-blue-600">simplicidade.</span>
+                <h1 className="text-8xl font-black tracking-tighter text-slate-900 leading-[0.85] mb-10">
+                  Gestão hoteleira <br/>
+                  <span className="text-indigo-600">sem esforço.</span>
                 </h1>
-                <p className="text-xl text-slate-500 font-medium leading-relaxed mb-10 max-w-lg">
-                  Gestão de quartos, estoque, financeiro e hóspedes em uma interface rápida e intuitiva. Feito para crescer com você.
+                <p className="text-2xl text-slate-500 font-medium leading-relaxed mb-12 max-w-xl">
+                  Simplifique seu checkout, controle seu estoque e maximize sua ocupação com a interface mais rápida do mercado.
                 </p>
                 <div className="flex gap-4">
-                  <button onClick={() => setLandingView('pricing')} className="px-10 py-5 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 transition-all shadow-2xl shadow-blue-200">
+                  <button onClick={() => setLandingView('pricing')} className="px-12 py-6 bg-indigo-600 text-white rounded-3xl font-black text-sm uppercase tracking-[0.2em] hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-200 group flex items-center gap-3">
                     Começar agora
+                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                   </button>
-                  <button onClick={() => setLandingView('login')} className="px-10 py-5 bg-white text-slate-900 border border-slate-200 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-slate-50 transition-all">
-                    Já sou cliente
+                  <button onClick={() => setLandingView('login')} className="px-12 py-6 bg-white text-slate-900 border-2 border-slate-100 rounded-3xl font-black text-sm uppercase tracking-[0.2em] hover:bg-slate-50 transition-all">
+                    Acessar
                   </button>
+                </div>
+
+                <div className="mt-16 flex items-center gap-6 opacity-60">
+                  <div className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Integrado com:</div>
+                  <div className="flex gap-4">
+                    <CreditCard size={20} />
+                    <Mail size={20} />
+                    <Users size={20} />
+                  </div>
                 </div>
               </motion.div>
 
-              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative">
-                <div className="absolute -inset-4 bg-blue-500/10 blur-3xl rounded-full" />
-                <div className="relative bg-white p-3 rounded-[32px] border border-slate-100 shadow-2xl rotate-2 overflow-hidden aspect-video group">
-                  <div className="flex h-full gap-2">
+              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2, duration: 0.8 }} className="relative">
+                <div className="absolute -inset-10 bg-indigo-500/10 blur-[100px] rounded-full" />
+                
+                {/* Mock UI Preview */}
+                <div className="relative bg-white p-4 rounded-[42px] border border-slate-200 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] rotate-3 overflow-hidden aspect-[1.4] transition-transform hover:rotate-1 hover:scale-105 duration-700">
+                  <div className="flex h-full gap-4">
                     {/* Mock Sidebar */}
-                    <div className="w-16 h-full bg-slate-50 rounded-2xl flex flex-col items-center py-4 gap-4">
-                      <div className="w-8 h-8 bg-slate-900 rounded-lg" />
-                      <div className="w-8 h-1.5 bg-slate-200 rounded-full" />
-                      <div className="w-8 h-1.5 bg-slate-200 rounded-full" />
-                      <div className="w-8 h-1.5 bg-slate-200 rounded-full" />
+                    <div className="w-20 h-full bg-slate-50 rounded-[32px] flex flex-col items-center py-6 gap-6">
+                      <div className="w-10 h-10 bg-slate-900 rounded-2xl" />
+                      <div className="space-y-4">
+                        <div className="w-10 h-2 bg-indigo-200 rounded-full mx-auto" />
+                        <div className="w-10 h-2 bg-slate-200 rounded-full mx-auto" />
+                        <div className="w-10 h-2 bg-slate-200 rounded-full mx-auto" />
+                      </div>
                     </div>
                     {/* Mock Content */}
-                    <div className="flex-1 space-y-4 pr-2">
-                      <div className="flex justify-between items-center mt-2">
-                        <div className="h-4 w-24 bg-slate-100 rounded-full" />
-                        <div className="h-6 w-16 bg-blue-100 rounded-full" />
+                    <div className="flex-1 flex flex-col gap-4 py-2 pr-2">
+                      <div className="flex justify-between items-center bg-slate-50/50 p-4 rounded-3xl">
+                        <div className="h-3 w-32 bg-slate-200 rounded-full" />
+                        <div className="flex gap-2">
+                           <div className="w-8 h-8 rounded-full bg-white shadow-sm" />
+                           <div className="w-8 h-8 rounded-full bg-white shadow-sm" />
+                        </div>
                       </div>
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="grid grid-cols-4 gap-4 flex-1">
                         {[
                           { s: 'occupied', n: '101' }, { s: 'vago', n: '102' }, { s: 'occupied', n: '103' }, { s: 'sujo', n: '104' },
                           { s: 'vago', n: '201' }, { s: 'occupied', n: '202' }, { s: 'vago', n: '203' }, { s: 'occupied', n: '204' }
                         ].map((r, idx) => (
-                          <div key={idx} className={`aspect-square rounded-xl p-2 flex flex-col justify-between border ${r.s === 'occupied' ? 'bg-blue-50 border-blue-100' : r.s === 'sujo' ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-100'}`}>
-                            <div className="text-[6px] font-black uppercase text-slate-400">{r.n}</div>
-                            <div className={`w-1.5 h-1.5 rounded-full ${r.s === 'occupied' ? 'bg-blue-500' : r.s === 'sujo' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                          <div key={idx} className={`rounded-3xl p-4 flex flex-col justify-between border-2 transition-all ${r.s === 'occupied' ? 'bg-indigo-50 border-indigo-100 shadow-sm' : r.s === 'sujo' ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-100'}`}>
+                            <div className="text-[9px] font-black uppercase text-slate-400">{r.n}</div>
+                            <div className={`w-2.5 h-2.5 rounded-full ${r.s === 'occupied' ? 'bg-indigo-500 shadow-[0_0_10px_indigo]' : r.s === 'sujo' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                           </div>
                         ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 pb-2">
-                         <div className="h-10 bg-slate-50 rounded-xl" />
-                         <div className="h-10 bg-slate-50 rounded-xl" />
                       </div>
                     </div>
                   </div>
                 </div>
-                <div className="absolute top-1/2 -left-10 bg-white p-6 rounded-3xl shadow-2xl border border-slate-50 -rotate-3 animate-bounce">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white"><Check size={16} /></div>
-                    <div>
-                      <div className="text-[10px] font-black uppercase text-slate-400">Check-in Concluído</div>
-                      <div className="text-sm font-black text-slate-900">Quarto 102</div>
-                    </div>
+
+                {/* Floating Elements */}
+                <div className="absolute -top-12 -right-8 bg-indigo-600 text-white p-8 rounded-[40px] shadow-2xl border border-indigo-400 rotate-12 scale-110">
+                   <div className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-70">Taxa de Ocupação</div>
+                   <div className="text-4xl font-black tracking-tight">94<span className="text-indigo-200">%</span></div>
+                </div>
+
+                <div className="absolute -bottom-16 -left-12 bg-white p-8 rounded-[40px] shadow-2xl border border-slate-100 flex items-center gap-5 -rotate-6">
+                  <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-3xl flex items-center justify-center"><CheckCircle2 size={28} /></div>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Pagamento Recebido</div>
+                    <div className="text-xl font-black text-slate-900">R$ 1.240,00</div>
                   </div>
                 </div>
               </motion.div>
             </div>
 
-            {/* Features Preview */}
-            <div className="grid md:grid-cols-3 gap-8 mt-40">
-              {[
-                { title: 'Mapa Digital', desc: 'Visualize o status de todos os quartos em tempo real.', icon: <LayoutGrid size={24} /> },
-                { title: 'Financeiro', desc: 'Fluxo de caixa, vendas e lucros detalhados por período.', icon: <TrendingUp size={24} /> },
-                { title: 'Estoque Inteligente', desc: 'Gerencie insumos e serviços com baixa automática.', icon: <Package size={24} /> }
-              ].map((f, i) => (
-                <div key={i} className="p-10 bg-white rounded-[32px] border border-slate-100 hover:border-blue-100 hover:shadow-xl transition-all group">
-                  <div className="w-14 h-14 bg-slate-50 text-slate-900 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                    {f.icon}
-                  </div>
-                  <h3 className="text-xl font-black text-slate-900 mb-2">{f.title}</h3>
-                  <p className="text-slate-500 font-medium leading-relaxed">{f.desc}</p>
-                </div>
-              ))}
+            {/* Trusted by section style */}
+            <div className="mt-40 pt-20 border-t border-slate-100">
+               <div className="text-center mb-16">
+                  <span className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">Recursos Exclusivos</span>
+               </div>
+               <div className="grid md:grid-cols-3 gap-12">
+                  {[
+                    { title: 'Gestão Visual', desc: 'Mapa de ocupação interativo com atualização em tempo real por websocket.', icon: <LayoutGrid />, color: 'indigo' },
+                    { title: 'Inteligência Financeira', desc: 'Previsões de receita, controle de fluxo de caixa e relatórios fiscais.', icon: <TrendingUp />, color: 'emerald' },
+                    { title: 'Estoque Automatizado', desc: 'Baixa automática de frigobar e serviços integrados ao checkout.', icon: <Package />, color: 'blue' }
+                  ].map((f, i) => (
+                    <motion.div 
+                      key={i} 
+                      whileHover={{ y: -10 }}
+                      className="p-12 bg-white rounded-[44px] border-2 border-slate-50 hover:border-indigo-100 hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.05)] transition-all group"
+                    >
+                      <div className={`w-16 h-16 bg-slate-50 text-slate-900 rounded-[24px] flex items-center justify-center mb-10 group-hover:bg-indigo-600 group-hover:text-white group-hover:rotate-6 transition-all duration-500`}>
+                        {f.icon}
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-900 mb-4 tracking-tight">{f.title}</h3>
+                      <p className="text-slate-500 font-medium leading-relaxed text-lg">{f.desc}</p>
+                    </motion.div>
+                  ))}
+               </div>
             </div>
           </main>
         </div>
@@ -1071,32 +1109,50 @@ export default function App() {
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          <div 
-                            onClick={() => {
-                              if (reservationToday) {
-                                setCheckInData({
-                                  ...checkInData,
-                                  guestId: reservationToday.guestId,
-                                  checkInDate: format(new Date(reservationToday.checkIn), 'yyyy-MM-dd'),
-                                  checkOutDate: format(new Date(reservationToday.checkOut), 'yyyy-MM-dd'),
-                                  adults: reservationToday.adults || 1,
-                                  children: reservationToday.children || 0,
-                                });
-                              }
-                              setShowCheckIn(room.id);
-                            }} 
-                            className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl h-28 cursor-pointer transition-all ${
+                          <div className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl h-28 cursor-pointer transition-all ${
                               reservationToday ? 'border-emerald-200 bg-emerald-50/20 hover:bg-emerald-50/50' : 'border-slate-100 hover:bg-slate-50'
                             }`}
                           >
-                             <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
-                               reservationToday ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-50 text-slate-300'
-                             }`}>
-                               {reservationToday ? <CalendarDays size={14} /> : <Plus size={14} />}
-                             </div>
-                             <span className={`text-[8px] font-black uppercase tracking-widest text-center px-2 ${reservationToday ? 'text-emerald-700' : 'text-slate-400'}`}>
-                               {reservationToday ? 'Reserva Hoje' : 'Check-in'}
-                             </span>
+                             {room.status === 'sujo' ? (
+                               <button 
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   updateRoomStatus(room.id, 'vago');
+                                 }}
+                                 className="w-full h-full flex flex-col items-center justify-center group"
+                               >
+                                 <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mb-1 group-hover:bg-amber-500 group-hover:text-white transition-all">
+                                   <CheckCircle2 size={14} />
+                                 </div>
+                                 <span className="text-[8px] font-black uppercase tracking-widest text-amber-700">Limpeza Rápida</span>
+                               </button>
+                             ) : (
+                               <div 
+                                 className="w-full h-full flex flex-col items-center justify-center"
+                                 onClick={() => {
+                                   if (reservationToday) {
+                                     setCheckInData({
+                                       ...checkInData,
+                                       guestId: reservationToday.guestId,
+                                       checkInDate: format(new Date(reservationToday.checkIn), 'yyyy-MM-dd'),
+                                       checkOutDate: format(new Date(reservationToday.checkOut), 'yyyy-MM-dd'),
+                                       adults: reservationToday.adults || 1,
+                                       children: reservationToday.children || 0,
+                                     });
+                                   }
+                                   setShowCheckIn(room.id);
+                                 }} 
+                               >
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
+                                    reservationToday ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-50 text-slate-300'
+                                  }`}>
+                                    {reservationToday ? <CalendarDays size={14} /> : <Plus size={14} />}
+                                  </div>
+                                  <span className={`text-[8px] font-black uppercase tracking-widest text-center px-2 ${reservationToday ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                    {reservationToday ? 'Reserva Hoje' : 'Check-in'}
+                                  </span>
+                               </div>
+                             )}
                           </div>
                           
                           <div className="flex justify-between items-center px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-100">
@@ -1365,7 +1421,7 @@ export default function App() {
                       ['Quarto', 'Status', 'Categoria', 'Preco Diaria'],
                       ...rooms.map(room => {
                         const statusMap: any = { vago: 'Livre', occupied: 'Ocupado', sujo: 'Sujo', manuntencao: 'Manutencao' };
-                        return [room.name, statusMap[room.status] || room.status, room.type, `R$ ${room.pricePerNight}`];
+                        return [room.number, statusMap[room.status] || room.status, room.type, `R$ ${room.pricePerNight}`];
                       })
                     ];
                     const csvContent = csvRows.map(e => e.join(";")).join("\n");
@@ -1418,7 +1474,7 @@ export default function App() {
                     {rooms.map(room => (
                       <tr key={room.id} className="hover:bg-slate-50/30 transition-colors">
                         <td className="px-8 py-5">
-                          <div className="font-black text-slate-900 text-base tracking-tight">{room.name}</div>
+                          <div className="font-black text-slate-900 text-base tracking-tight">{room.number}</div>
                         </td>
                         <td className="px-8 py-5">
                           <div className="flex items-center gap-2">
@@ -1441,12 +1497,22 @@ export default function App() {
                           {formatPrice(room.pricePerNight)}
                         </td>
                         <td className="px-8 py-5 text-right">
-                          <button 
-                            onClick={() => setView('map')}
-                            className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline"
-                          >
-                            Ver no Mapa
-                          </button>
+                          <div className="flex justify-end gap-3">
+                            {room.status === 'sujo' && (
+                              <button 
+                                onClick={() => updateRoomStatus(room.id, 'vago')}
+                                className="px-4 py-1.5 bg-amber-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-amber-600 transition-all shadow-sm shadow-amber-100"
+                              >
+                                Limpeza Rápida
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => setView('map')}
+                              className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline"
+                            >
+                              Ver no Mapa
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
