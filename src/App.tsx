@@ -60,7 +60,7 @@ import { Guest, Room, Booking, AuthState, InventoryItem, RoomType, ItemCategory,
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, user: null });
-  const [view, setView] = useState<'map' | 'guests' | 'inventory' | 'bookings' | 'finance' | 'users' | 'calendar'>('map');
+  const [view, setView] = useState<'map' | 'guests' | 'inventory' | 'bookings' | 'finance' | 'users' | 'calendar' | 'booking-history' | 'occupancy'>('map');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showReservationForm, setShowReservationForm] = useState<string | null>(null); // roomId
   const [reservationData, setReservationData] = useState({
@@ -183,34 +183,7 @@ export default function App() {
     { id: 's2', name: 'Translado Aeroporto', category: 'service', price: 80, stock: 999 },
     { id: 'o1', name: 'Estacionamento Diário', category: 'misc', price: 25, stock: 999 },
   ]);
-  const [bookings, setBookings] = useState<Booking[]>([
-    {
-      id: 'b1',
-      roomId: '1',
-      guestId: 'g1',
-      checkIn: Date.now() - 86400000, // Yesterday
-      checkOut: Date.now() + 1800000, // 30 mins from now
-      basePrice: 220,
-      charges: [],
-      status: 'active',
-      adults: 2,
-      children: 0,
-      registeredBy: 'Administrador'
-    },
-    {
-      id: 'b2',
-      roomId: '5',
-      guestId: 'g1',
-      checkIn: Date.now() + 86400000, // Tomorrow
-      checkOut: Date.now() + 2 * 86400000, // Day after tomorrow
-      basePrice: 250,
-      charges: [],
-      status: 'reserved',
-      adults: 1,
-      children: 0,
-      registeredBy: 'Administrador'
-    }
-  ]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
   // Modals / Selection States
@@ -225,10 +198,16 @@ export default function App() {
   const [showStockUpdate, setShowStockUpdate] = useState<string | null>(null); // itemId
   const [showCategoryPrices, setShowCategoryPrices] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState<string | null>(null);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [recoveryStep, setRecoveryStep] = useState<'username' | 'reset'>('username');
+  const [recoveryUsername, setRecoveryUsername] = useState('');
+  const [masterKey, setMasterKey] = useState('');
   const [guestSearchTerm, setGuestSearchTerm] = useState('');
   
   const [stockUpdateData, setStockUpdateData] = useState({ amount: 1, type: 'add' as 'add' | 'remove', reason: '' });
   const [newUserData, setNewUserData] = useState({ name: '', username: '', password: '', role: 'receptionist' as UserRole });
+  const [newPassword, setNewPassword] = useState('');
   
   const [newGuest, setNewGuest] = useState({ name: '', cpf: '', birthDate: '', email: '' });
   const [newItem, setNewItem] = useState({ name: '', category: 'beverage' as ItemCategory, price: 0, stock: 0 });
@@ -264,7 +243,7 @@ export default function App() {
       setAuth({ isAuthenticated: true, user: foundUser });
       setError('');
     } else {
-      setError('Credenciais inválidas. Tente admin / 123 ou recep / 123');
+      setError('Credenciais inválidas. Verifique seu usuário e senha.');
     }
   };
 
@@ -545,6 +524,39 @@ export default function App() {
     setShowUserForm(false);
   };
 
+  const handleUpdatePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showChangePasswordModal) return;
+    setUsers(users.map(u => u.id === showChangePasswordModal ? { ...u, password: newPassword } : u));
+    setNewPassword('');
+    setShowChangePasswordModal(null);
+  };
+
+  const handleAdminRecovery = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (recoveryStep === 'username') {
+      if (recoveryUsername.toLowerCase() === 'admin') {
+        setRecoveryStep('reset');
+        setError('');
+      } else {
+        setError('Apenas o administrador pode recuperar senha por aqui.');
+      }
+    } else {
+      // Validando a "Master Key" (Chave de segurança do criador)
+      if (masterKey === '200763') {
+        setUsers(users.map(u => u.username === 'admin' ? { ...u, password: newPassword } : u));
+        setIsRecovering(false);
+        setRecoveryStep('username');
+        setNewPassword('');
+        setRecoveryUsername('');
+        setMasterKey('');
+        setError('Senha Admin alterada com sucesso!');
+      } else {
+        setError('Chave Mestra inválida. Entre em contato com o desenvolvedor.');
+      }
+    }
+  };
+
   const stats = useMemo(() => {
     const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
     const expense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -556,16 +568,63 @@ export default function App() {
   if (!auth.isAuthenticated) {
     return (
       <div className="min-h-screen bg-bg-surface flex items-center justify-center p-6">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm bg-white p-10 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3 mb-10"><div className="w-6 h-6 bg-slate-900 rounded-md" /><h1 className="text-lg font-bold tracking-tight text-slate-900">LuxeStay</h1></div>
-          <h2 className="text-xl font-semibold mb-2">Entrar no Sistema</h2>
-          <p className="text-sm text-slate-500 mb-8">Administração Hoteleira</p>
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div className="space-y-1.5"><label className="text-xs font-semibold text-slate-700">USUÁRIO</label><input type="text" className="minimal-input" placeholder="admin" value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} /></div>
-            <div className="space-y-1.5"><label className="text-xs font-semibold text-slate-700">SENHA</label><input type="password" underline-none className="minimal-input" placeholder="1234" value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} /></div>
-            {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
-            <button type="submit" className="minimal-btn w-full mt-4">Acessar Painel</button>
-          </form>
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm bg-white p-10 rounded-xl border border-slate-200 shadow-sm transition-all">
+          <div className="flex items-center gap-3 mb-10">
+            <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-lg">
+              <Hotel size={24} strokeWidth={2.5} />
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900">Meu Hotel</h1>
+          </div>
+          
+          {!isRecovering ? (
+            <>
+              <h2 className="text-xl font-semibold mb-2">Entrar no Sistema</h2>
+              <p className="text-sm text-slate-500 mb-8">Administração Hoteleira</p>
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div className="space-y-1.5"><label className="text-xs font-semibold text-slate-700">USUÁRIO</label><input type="text" className="minimal-input" placeholder="Seu usuário" value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} /></div>
+                <div className="space-y-1.5"><label className="text-xs font-semibold text-slate-700">SENHA</label><input type="password" underline-none className="minimal-input" placeholder="••••••••" value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} /></div>
+                <div className="flex justify-between items-center">
+                  {error && <p className={`text-xs font-medium ${error.includes('sucesso') ? 'text-emerald-500' : 'text-red-500'}`}>{error}</p>}
+                  <button type="button" onClick={() => { setIsRecovering(true); setError(''); }} className="text-[10px] text-slate-400 font-bold uppercase tracking-widest hover:text-slate-600 transition-colors ml-auto">Esqueci a senha</button>
+                </div>
+                <button type="submit" className="minimal-btn w-full mt-4">Acessar Painel</button>
+              </form>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-semibold mb-2">Recuperar Admin</h2>
+              <p className="text-sm text-slate-500 mb-8">
+                {recoveryStep === 'username' ? 'Identifique sua conta master' : 'Autentique com a Chave Mestra'}
+              </p>
+              <form onSubmit={handleAdminRecovery} className="space-y-5">
+                {recoveryStep === 'username' ? (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-tighter">Login do Administrador</label>
+                    <input type="text" required className="minimal-input" placeholder="Ex: admin" value={recoveryUsername} onChange={e => setRecoveryUsername(e.target.value)} />
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700 uppercase tracking-tighter">Chave Mestra de Segurança</label>
+                      <input type="password" required className="minimal-input" placeholder="Código de 6 dígitos" value={masterKey} onChange={e => setMasterKey(e.target.value)} />
+                      <p className="text-[9px] text-slate-400 italic">Solicite a chave ao desenvolvedor do sistema.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700 uppercase tracking-tighter">Nova Senha</label>
+                      <input type="password" required className="minimal-input font-mono" placeholder="••••••••" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                    </div>
+                  </>
+                )}
+                {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => { setIsRecovering(false); setRecoveryStep('username'); setError(''); }} className="flex-1 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 rounded-xl hover:bg-slate-100 transition-all text-center">Voltar</button>
+                  <button type="submit" className="flex-[2] py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all uppercase text-[10px] tracking-widest shadow-lg shadow-slate-100">
+                    {recoveryStep === 'username' ? 'Continuar' : 'Resetar Senha'}
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
         </motion.div>
       </div>
     );
@@ -575,11 +634,17 @@ export default function App() {
     <div className="flex h-screen w-full bg-bg-surface overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 h-full bg-white border-r border-slate-200 flex flex-col p-8 shrink-0">
-        <div className="flex items-center gap-3 mb-12"><div className="w-5 h-5 bg-slate-900 rounded-md" /><h1 className="text-sm font-bold tracking-tight text-slate-900">LuxeStay</h1></div>
+        <div className="flex items-center gap-3 mb-12">
+          <div className="w-8 h-8 bg-slate-900 text-white rounded-lg flex items-center justify-center shadow-md">
+            <Hotel size={18} strokeWidth={2.5} />
+          </div>
+          <h1 className="text-sm font-black tracking-tight text-slate-900 uppercase">Meu Hotel</h1>
+        </div>
         <nav className="flex-1 space-y-2">
           <button onClick={() => setView('map')} className={`sidebar-item w-full ${view === 'map' ? 'active' : ''}`}><div className="sidebar-dot" /><LayoutGrid size={16} /> Mapa de Quartos</button>
           <button onClick={() => setView('guests')} className={`sidebar-item w-full ${view === 'guests' ? 'active' : ''}`}><div className="sidebar-dot" /><Users size={16} /> Hóspedes</button>
           <button onClick={() => setView('calendar')} className={`sidebar-item w-full ${view === 'calendar' ? 'active' : ''}`}><div className="sidebar-dot" /><CalendarDays size={16} /> Calendário</button>
+          <button onClick={() => setView('occupancy')} className={`sidebar-item w-full ${view === 'occupancy' ? 'active' : ''}`}><div className="sidebar-dot" /><FileText size={16} /> Ocupação Diária</button>
           <button onClick={() => setView('inventory')} className={`sidebar-item w-full ${view === 'inventory' ? 'active' : ''}`}><div className="sidebar-dot" /><Package size={16} /> Estoque e Serviços</button>
           <button onClick={() => setView('booking-history')} className={`sidebar-item w-full ${view === 'booking-history' ? 'active' : ''}`}><div className="sidebar-dot" /><Calendar size={16} /> Histórico</button>
           
@@ -655,9 +720,9 @@ export default function App() {
                       status === 'vago' ? (reservationToday && !booking ? 'bg-white border-emerald-200 ring-1 ring-emerald-50' : 'bg-white border-slate-200') :
                       status === 'sujo' ? 'bg-[#fefaf3] border-amber-200 ring-1 ring-amber-50' : 
                       status === 'manuntencao' ? 'bg-slate-50 border-slate-300 opacity-70' :
-                      status === 'occupied' ? 'bg-white border-blue-200 shadow-sm ring-1 ring-blue-50' :
-                      status === 'expiring' ? 'bg-white border-amber-300 shadow-lg ring-2 ring-amber-500 ring-offset-1 animate-pulse' :
-                      'bg-white border-red-300 shadow-lg ring-2 ring-red-500 ring-offset-1'
+                      status === 'occupied' ? 'bg-blue-50 border-blue-200 shadow-md ring-1 ring-blue-100' :
+                      status === 'expiring' ? 'bg-blue-50 border-amber-300 shadow-lg ring-2 ring-amber-500 ring-offset-1 animate-pulse' :
+                      'bg-blue-50 border-red-300 shadow-lg ring-2 ring-red-500 ring-offset-1'
                     }`}
                   >
                     {/* Status Badges */}
@@ -694,7 +759,7 @@ export default function App() {
                         <div className="flex flex-col items-end">
                           {booking ? (
                             <div className={`px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-wider border ${
-                              status === 'occupied' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                              status === 'occupied' ? 'bg-blue-600 text-white border-blue-600' :
                               status === 'expiring' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-600 border-red-200'
                             }`}>
                               {status === 'occupied' ? 'Hospedado' : status === 'expiring' ? 'Saída' : 'Atraso'}
@@ -1059,6 +1124,113 @@ export default function App() {
             </div>
           )}
 
+          {view === 'occupancy' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-7xl mx-auto space-y-8">
+              <div className="flex justify-between items-end mb-4">
+                <div>
+                  <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Relatório de Ocupação</h2>
+                  <p className="text-sm text-slate-500 font-medium">Situação detalhada do hotel em {format(new Date(), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    const csvRows = [
+                      ['RELATORIO DE OCUPACAO DIARIA'],
+                      ['Data:', format(new Date(), 'dd/MM/yyyy HH:mm')],
+                      [''],
+                      ['Quarto', 'Status', 'Categoria', 'Preco Diaria'],
+                      ...rooms.map(room => {
+                        const statusMap: any = { vago: 'Livre', occupied: 'Ocupado', sujo: 'Sujo', manuntencao: 'Manutencao' };
+                        return [room.name, statusMap[room.status] || room.status, room.type, `R$ ${room.pricePerNight}`];
+                      })
+                    ];
+                    const csvContent = csvRows.map(e => e.join(";")).join("\n");
+                    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `mapa_ocupacao_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200"
+                >
+                  <FileText size={16} /> Exportar Relatório CSV
+                </button>
+              </div>
+
+              {/* Stats Grid */}
+              <div className="grid grid-cols-4 gap-6">
+                {[
+                  { label: 'Taxa de Ocupação', val: `${((rooms.filter(r => ['occupied', 'expiring', 'delayed'].includes(r.status)).length / rooms.length) * 100).toFixed(1)}%`, sub: 'Relativo ao total', color: 'blue' },
+                  { label: 'Quartos Disponíveis', val: rooms.filter(r => r.status === 'vago').length, sub: 'Vagos e prontos', color: 'emerald' },
+                  { label: 'Quartos Ocupados', val: rooms.filter(r => ['occupied', 'expiring', 'delayed'].includes(r.status)).length, sub: 'Com hóspedes ativos', color: 'blue' },
+                  { label: 'Fora de Serviço', val: rooms.filter(r => r.status === 'manuntencao' || r.status === 'sujo').length, sub: 'Limpeza/Manutenção', color: 'amber' },
+                ].map((s, i) => (
+                  <div key={i} className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
+                    <div className="relative">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{s.label}</div>
+                      <div className={`text-4xl font-black ${s.color === 'blue' ? 'text-blue-600' : s.color === 'emerald' ? 'text-emerald-600' : 'text-amber-600'} tracking-tighter`}>{s.val}</div>
+                      <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase">{s.sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Detail Table */}
+              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50/50">
+                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Identificação</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status Atual</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Unidade</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor Diária</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {rooms.map(room => (
+                      <tr key={room.id} className="hover:bg-slate-50/30 transition-colors">
+                        <td className="px-8 py-5">
+                          <div className="font-black text-slate-900 text-base tracking-tight">{room.name}</div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-2">
+                             <div className={`w-2 h-2 rounded-full ${
+                                room.status === 'vago' ? 'bg-emerald-500' : 
+                                ['occupied', 'expiring', 'delayed'].includes(room.status) ? 'bg-blue-500' : 'bg-amber-500'
+                             }`} />
+                             <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                room.status === 'vago' ? 'text-emerald-600' : 
+                                ['occupied', 'expiring', 'delayed'].includes(room.status) ? 'text-blue-600' : 'text-amber-600'
+                             }`}>
+                                {room.status === 'vago' ? 'Livre' : room.status === 'sujo' ? 'Limpando' : room.status === 'manuntencao' ? 'Manutenção' : 'Hospedado'}
+                             </span>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{room.type}</div>
+                        </td>
+                        <td className="px-8 py-5 text-sm font-mono font-bold text-slate-900">
+                          {formatPrice(room.pricePerNight)}
+                        </td>
+                        <td className="px-8 py-5 text-right">
+                          <button 
+                            onClick={() => setView('map')}
+                            className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline"
+                          >
+                            Ver no Mapa
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
+
           {view === 'finance' && auth.user?.role === 'admin' && (
             <div className="max-w-6xl mx-auto space-y-10">
                <div className="grid md:grid-cols-3 gap-8">
@@ -1166,11 +1338,20 @@ export default function App() {
                           </span>
                        </td>
                        <td className="px-6 py-5 text-right">
-                          {u.username !== 'admin' && (
-                            <button onClick={() => setUsers(users.filter(x => x.id !== u.id))} className="text-slate-200 hover:text-red-500 p-2">
-                               <Trash2 size={16} />
+                          <div className="flex justify-end gap-2">
+                            <button 
+                              onClick={() => setShowChangePasswordModal(u.id)} 
+                              className="text-slate-400 hover:text-blue-600 p-2 border border-slate-100 rounded-lg hover:border-blue-100 transition-all"
+                              title="Alterar Senha"
+                            >
+                               <Settings size={16} />
                             </button>
-                          )}
+                            {u.username !== 'admin' && (
+                              <button onClick={() => setUsers(users.filter(x => x.id !== u.id))} className="text-slate-200 hover:text-red-500 p-2 border border-slate-100 rounded-lg hover:border-red-100 transition-all">
+                                 <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
                        </td>
                      </tr>
                    ))}
@@ -1694,13 +1875,14 @@ export default function App() {
         {showUserForm && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowUserForm(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
             <h3 className="text-xl font-black mb-8 leading-tight">Novo Colaborador</h3>
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-6 -mt-4">Todos os colabores podem realizar login no sistema.</p>
             <form onSubmit={registerUser} className="space-y-5">
               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400 uppercase">Nome Completo</label><input type="text" required value={newUserData.name} onChange={e => setNewUserData({...newUserData, name: e.target.value})} className="minimal-input" /></div>
               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400 uppercase">Usuário (Login)</label><input type="text" required value={newUserData.username} onChange={e => setNewUserData({...newUserData, username: e.target.value})} className="minimal-input" /></div>
-              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400 uppercase">Senha</label><input type="password" required value={newUserData.password} onChange={e => setNewUserData({...newUserData, password: e.target.value})} className="minimal-input" /></div>
+              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400 uppercase">Senha Provisória</label><input type="password" required value={newUserData.password} onChange={e => setNewUserData({...newUserData, password: e.target.value})} className="minimal-input" /></div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Cargo / Nível</label>
-                <select value={newUserData.role} onChange={e => setNewUserData({...newUserData, role: e.target.value as UserRole})} className="minimal-input">
+                <select value={newUserData.role} onChange={e => setNewUserData({...newUserData, role: e.target.value as UserRole})} className="minimal-input text-xs font-bold uppercase tracking-widest">
                   <option value="receptionist">Recepcionista</option>
                   <option value="admin">Administrador</option>
                 </select>
@@ -1711,6 +1893,36 @@ export default function App() {
               </div>
             </form>
           </motion.div></div>
+        )}
+
+        {showChangePasswordModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setShowChangePasswordModal(null); setNewPassword(''); }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
+              <div className="mb-6">
+                <h3 className="text-xl font-black leading-tight">Alterar Senha</h3>
+                <p className="text-[10px] text-slate-400 uppercase tracking-widest">Usuário: {users.find(u => u.id === showChangePasswordModal)?.username}</p>
+              </div>
+              <form onSubmit={handleUpdatePassword} className="space-y-6">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Nova Senha</label>
+                  <input 
+                    type="password" 
+                    required 
+                    value={newPassword} 
+                    onChange={e => setNewPassword(e.target.value)} 
+                    className="minimal-input font-mono" 
+                    placeholder="••••••••"
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => { setShowChangePasswordModal(null); setNewPassword(''); }} className="flex-1 py-3 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 rounded-xl hover:bg-slate-100 transition-all">Cancelar</button>
+                  <button type="submit" className="flex-1 px-6 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-emerald-600 transition-all uppercase text-[10px] tracking-widest shadow-lg shadow-slate-100">Atualizar</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
