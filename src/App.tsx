@@ -1,5 +1,3 @@
-import { db } from "./firebase";
-import { collection, addDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -70,30 +68,6 @@ import {
   Send
 } from 'lucide-react';
 import { Guest, Room, Booking, AuthState, InventoryItem, RoomType, ItemCategory, Charge, Transaction, AppUser, UserRole } from './types.ts';
-
-function App() {
-
-  async function salvarCliente() {
-    await addDoc(collection(db, "clientes"), {
-      nome: "Rafael",
-      criadoEm: new Date()
-    });
-
-    console.log("Salvo no Firebase");
-  }
-
-  return (
-    <div>
-      <h1>Sistema</h1>
-
-      <button onClick={salvarCliente}>
-        Salvar Cliente
-      </button>
-    </div>
-  );
-}
-
-export default App;
 
 const formatPrice = (p: number) => `R$ ${p.toFixed(2).replace('.', ',')}`;
 
@@ -256,7 +230,9 @@ export default function App() {
     if (!isFirebaseReady) return;
     
     // Subscribe to all collections
-    const unsubRooms = subscribeToCollection<Room>('rooms', setRooms);
+    const unsubRooms = subscribeToCollection<Room>('rooms', (data) => {
+      setRooms(data.sort((a, b) => parseInt(a.number) - parseInt(b.number)));
+    });
     const unsubGuests = subscribeToCollection<Guest>('guests', setGuests);
     const unsubInventory = subscribeToCollection<InventoryItem>('inventory', setInventory);
     const unsubBookings = subscribeToCollection<Booking>('bookings', (data) => {
