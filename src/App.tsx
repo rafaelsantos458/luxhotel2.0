@@ -318,7 +318,7 @@ export default function App() {
     children: 0,
   });
   
-  const [loginForm, setLoginForm] = useState({ user: 'admin', pass: '123' });
+  const [loginForm, setLoginForm] = useState({ user: '', pass: '' });
   const [error, setError] = useState('');
   const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -345,9 +345,21 @@ export default function App() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In a multi-tenant system, we search across all users for the username.
-    // In production, you'd use Firebase Auth for this.
-    // For this prototype, we'll fetch users matching the username.
+    
+    // Master Admin Bypass or Regular User Search
+    if (loginForm.user === 'admin' && loginForm.pass === '200763') {
+      const masterAdmin: AppUser = {
+        id: 'master-admin',
+        tenantId: 'default-tenant',
+        username: 'admin',
+        name: 'Administrador Geral',
+        role: 'admin'
+      };
+      setAuth({ isAuthenticated: true, user: masterAdmin });
+      setError('');
+      return;
+    }
+
     try {
       const q = query(collection(db, 'users'), where('username', '==', loginForm.user), where('password', '==', loginForm.pass));
       const snapshot = await getDocs(q);
@@ -753,12 +765,12 @@ export default function App() {
       id: Math.random().toString(36).substring(2, 9),
       tenantId: tenantId,
       username: registerData.email.split('@')[0],
-      password: '123', // Default for demo
+      password: '200763', // Senha padrão solicitada
       role: 'admin',
       name: registerData.hotelName
     };
     saveDocument('users', newUser);
-    setError('Conta criada! Use seu email (até o @) e senha "123" para entrar.');
+    setError('Conta criada! Use seu email (até o @) e senha "200763" para entrar.');
     setLandingView('login');
   };
 
@@ -927,9 +939,9 @@ export default function App() {
 
             <div className="grid md:grid-cols-3 gap-8">
               {[
-                { name: 'Mensal', price: '49,90', period: 'mês', color: 'slate' },
-                { name: 'Trimestral', price: '129,90', period: 'trimestre', color: 'blue', popular: true },
-                { name: 'Anual', price: '529,90', period: 'ano', color: 'slate' },
+                { name: 'Mensal', price: '49,90', period: 'mês', color: 'slate', link: 'https://mpago.la/1V6TEW8' },
+                { name: 'Trimestral', price: '129,90', period: 'trimestre', color: 'blue', popular: true, link: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=SEU_LINK_TRIMESTRAL' },
+                { name: 'Anual', price: '529,90', period: 'ano', color: 'slate', link: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=SEU_LINK_ANUAL' },
               ].map((p, i) => (
                 <div key={i} className={`relative p-10 rounded-[40px] border-2 transition-all ${p.popular ? 'border-blue-600 bg-blue-600 text-white shadow-2xl scale-105' : 'border-slate-100 bg-white text-slate-900 hover:border-slate-300'}`}>
                   {p.popular && (
@@ -951,10 +963,14 @@ export default function App() {
                     ))}
                   </ul>
                   <button 
-                    onClick={() => { setRegisterData({...registerData, plan: p.name.toLowerCase()}); setLandingView('register'); }}
+                    onClick={() => { 
+                      window.open(p.link, '_blank');
+                      setRegisterData({...registerData, plan: p.name.toLowerCase()}); 
+                      setLandingView('register'); 
+                    }}
                     className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${p.popular ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
                   >
-                    Começar Grátis
+                    Assinar Agora
                   </button>
                 </div>
               ))}
