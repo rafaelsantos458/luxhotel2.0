@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth as firebaseAuth } from './firebase';
 import { 
   testConnection, 
@@ -146,7 +147,7 @@ export default function App() {
     if (editingReservationId) {
       const existing = bookings.find(b => b.id === editingReservationId);
       if (existing) {
-        saveDocument('bookings', {
+        saveTenantDoc('bookings', {
           ...existing,
           guestId: reservationData.guestId,
           checkIn: start.getTime(),
@@ -170,7 +171,7 @@ export default function App() {
         children: reservationData.children,
         registeredBy: auth.user?.name || 'Unknown'
       };
-      saveDocument('bookings', booking);
+      saveTenantDoc('bookings', booking);
     }
     
     setShowReservationForm(null);
@@ -181,7 +182,7 @@ export default function App() {
   const cancelReservation = (id: string) => {
     const booking = bookings.find(b => b.id === id);
     if (booking) {
-      saveDocument('bookings', { ...booking, status: 'canceled' });
+      saveTenantDoc('bookings', { ...booking, status: 'canceled' });
     }
     setShowReservationForm(null);
     setEditingReservationId(null);
@@ -227,19 +228,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!isFirebaseReady) return;
+    if (!isFirebaseReady || !auth.isAuthenticated || !auth.user?.tenantId) {
+      if (isFirebaseReady && !auth.isAuthenticated) {
+        setRooms([]);
+        setGuests([]);
+        setInventory([]);
+        setBookings([]);
+        setTransactions([]);
+        setUsers([]);
+      }
+      return;
+    }
     
-    // Subscribe to all collections
+    const tenantId = auth.user.tenantId;
+
     const unsubRooms = subscribeToCollection<Room>('rooms', (data) => {
       setRooms(data.sort((a, b) => parseInt(a.number) - parseInt(b.number)));
-    });
-    const unsubGuests = subscribeToCollection<Guest>('guests', setGuests);
-    const unsubInventory = subscribeToCollection<InventoryItem>('inventory', setInventory);
+    }, tenantId);
+    const unsubGuests = subscribeToCollection<Guest>('guests', setGuests, tenantId);
+    const unsubInventory = subscribeToCollection<InventoryItem>('inventory', setInventory, tenantId);
     const unsubBookings = subscribeToCollection<Booking>('bookings', (data) => {
       setBookings(data.sort((a, b) => b.checkIn - a.checkIn));
-    });
-    const unsubTransactions = subscribeToCollection<Transaction>('transactions', setTransactions);
-    const unsubUsers = subscribeToCollection<AppUser>('users', setUsers);
+    }, tenantId);
+    const unsubTransactions = subscribeToCollection<Transaction>('transactions', setTransactions, tenantId);
+    const unsubUsers = subscribeToCollection<AppUser>('users', setUsers, tenantId);
 
     return () => {
       unsubRooms();
@@ -249,14 +261,16 @@ export default function App() {
       unsubTransactions();
       unsubUsers();
     };
-  }, [isFirebaseReady]);
+  }, [isFirebaseReady, auth.isAuthenticated, auth.user?.tenantId]);
 
   // Initial Data Bootstrap (only if empty) - for Demo purposes
   useEffect(() => {
-    if (isFirebaseReady) {
-      if (rooms.length === 0) {
+    if (isFirebaseReady && auth.isAuthenticated && auth.user?.tenantId) {
+      const tenantId = auth.user.tenantId;
+      if (rooms.length === 0 && auth.user.role === 'admin' && auth.user.username === 'admin') {
         const initialRooms: Room[] = Array.from({ length: 20 }, (_, i) => ({
-          id: (i + 1).toString(),
+          id: `${tenantId}_${(i + 1)}`,
+          tenantId,
           number: (i + 1).toString().padStart(2, '0'),
           type: 'couple',
           pricePerNight: 220,
@@ -264,28 +278,8 @@ export default function App() {
         }));
         initialRooms.forEach(r => saveDocument('rooms', r));
       }
-      if (users.length === 0) {
-        const initialUsers: AppUser[] = [
-          { id: '1', name: 'Administrador', username: 'admin', password: '123', role: 'admin' },
-          { id: '2', name: 'Recepcionista', username: 'recep', password: '123', role: 'receptionist' }
-        ];
-        initialUsers.forEach(u => saveDocument('users', u));
-      }
-      if (inventory.length === 0) {
-        const initialItems: InventoryItem[] = [
-          { id: 'i1', name: 'Água Mineral 500ml', category: 'beverage', price: 5, stock: 50 },
-          { id: 'i2', name: 'Cerveja Lata 350ml', category: 'beverage', price: 8, stock: 24 },
-          { id: 'i3', name: 'Refrigerante Lata 350ml', category: 'beverage', price: 6, stock: 30 },
-          { id: 'i4', name: 'Chocolate Barra', category: 'food', price: 10, stock: 15 },
-          { id: 'i5', name: 'Salgadinho Pacote', category: 'food', price: 7, stock: 20 },
-          { id: 's1', name: 'Lavanderia - Peça', category: 'service', price: 15, stock: 999 },
-          { id: 's2', name: 'Translado Aeroporto', category: 'service', price: 80, stock: 999 },
-          { id: 'o1', name: 'Estacionamento Diário', category: 'misc', price: 25, stock: 999 },
-        ];
-        initialItems.forEach(item => saveDocument('inventory', item));
-      }
     }
-  }, [rooms.length, users.length, inventory.length, isFirebaseReady]);
+  }, [rooms.length, users.length, inventory.length, isFirebaseReady, auth.isAuthenticated, auth.user?.tenantId]);
 
   
   // Modals / Selection States
@@ -328,6 +322,15 @@ export default function App() {
   const [error, setError] = useState('');
   const [currentTime, setCurrentTime] = useState(Date.now());
 
+  // Helper for tenant-scoped saving
+  const saveTenantDoc = <T extends { tenantId?: string, id: string }>(coll: string, data: T) => {
+    if (auth.user?.tenantId) {
+      saveDocument(coll, { ...data, tenantId: auth.user.tenantId });
+    } else {
+      saveDocument(coll, data);
+    }
+  };
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now()), 30000);
     
@@ -340,47 +343,58 @@ export default function App() {
     return () => clearInterval(timer);
   }, [showCheckoutConf]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const foundUser = users.find(u => u.username === loginForm.user && u.password === loginForm.pass);
-    if (foundUser) {
-      setAuth({ isAuthenticated: true, user: foundUser });
-      setError('');
-    } else {
-      setError('Credenciais inválidas. Verifique seu usuário e senha.');
+    // In a multi-tenant system, we search across all users for the username.
+    // In production, you'd use Firebase Auth for this.
+    // For this prototype, we'll fetch users matching the username.
+    try {
+      const q = query(collection(db, 'users'), where('username', '==', loginForm.user), where('password', '==', loginForm.pass));
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        const foundUser = snapshot.docs[0].data() as AppUser;
+        setAuth({ isAuthenticated: true, user: foundUser });
+        setError('');
+      } else {
+        setError('Credenciais inválidas. Verifique seu usuário e senha.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao realizar login. Tente novamente.');
     }
   };
 
   const addRoom = () => {
     const nextNum = (rooms.length + 1).toString().padStart(2, '0');
-    saveDocument('rooms', { id: nextNum, number: nextNum, type: 'couple', pricePerNight: 220, status: 'vago' });
+    saveTenantDoc('rooms', { id: Math.random().toString(36).substring(2, 9), number: nextNum, type: 'couple', pricePerNight: 220, status: 'vago' });
   };
 
   const updateRoomStatus = (roomId: string, status: 'vago' | 'sujo' | 'manuntencao') => {
     const room = rooms.find(r => r.id === roomId);
-    if (room) saveDocument('rooms', { ...room, status });
+    if (room) saveTenantDoc('rooms', { ...room, status });
   };
 
   const updateRoomType = (roomId: string, type: RoomType) => {
     const category = roomCategories.find(c => c.value === type);
     const room = rooms.find(r => r.id === roomId);
-    if (room) saveDocument('rooms', { ...room, type, pricePerNight: category?.price || room.pricePerNight });
+    if (room) saveTenantDoc('rooms', { ...room, type, pricePerNight: category?.price || room.pricePerNight });
   };
 
   const updateRoomNumber = (roomId: string, number: string) => {
     const room = rooms.find(r => r.id === roomId);
-    if (room) saveDocument('rooms', { ...room, number });
+    if (room) saveTenantDoc('rooms', { ...room, number });
   };
 
   const updateIndividualRoomPrice = (roomId: string, price: number) => {
     const room = rooms.find(r => r.id === roomId);
-    if (room) saveDocument('rooms', { ...room, pricePerNight: price });
+    if (room) saveTenantDoc('rooms', { ...room, pricePerNight: price });
   };
 
   const registerGuest = (e: React.FormEvent) => {
     e.preventDefault();
     const guest: Guest = { ...newGuest, id: Math.random().toString(36).substring(2, 9) };
-    saveDocument('guests', guest);
+    saveTenantDoc('guests', guest);
     
     // If registering during check-in, auto-select this guest
     if (showCheckIn) {
@@ -394,7 +408,7 @@ export default function App() {
   const registerItem = (e: React.FormEvent) => {
     e.preventDefault();
     const item: InventoryItem = { ...newItem, id: Math.random().toString(36).substring(2, 9) };
-    saveDocument('inventory', item);
+    saveTenantDoc('inventory', item);
     setNewItem({ name: '', category: 'beverage', price: 0, stock: 0 });
     setShowItemForm(false);
   };
@@ -409,7 +423,7 @@ export default function App() {
       description: newExpense.description,
       timestamp: Date.now()
     };
-    saveDocument('transactions', trans);
+    saveTenantDoc('transactions', trans);
     setNewExpense({ description: '', amount: 0, category: 'Maintenance' });
     setShowExpenseForm(false);
   };
@@ -448,12 +462,12 @@ export default function App() {
     // Remove or complete existing reservation for this room/guest if it exists
     bookings.forEach(b => {
       if (b.roomId === room.id && b.guestId === checkInData.guestId && b.status === 'reserved') {
-        saveDocument('bookings', { ...b, status: 'completed' });
+        saveTenantDoc('bookings', { ...b, status: 'completed' });
       }
     });
 
-    saveDocument('bookings', booking);
-    saveDocument('rooms', { ...room, status: 'occupied' });
+    saveTenantDoc('bookings', booking);
+    saveTenantDoc('rooms', { ...room, status: 'occupied' });
     
     setCheckInData({ 
       guestId: '', 
@@ -498,10 +512,10 @@ export default function App() {
       newCharges = [...booking.charges, newCharge];
     }
     
-    saveDocument('bookings', { ...booking, charges: newCharges });
+    saveTenantDoc('bookings', { ...booking, charges: newCharges });
 
     if (!isService) {
-      saveDocument('inventory', { ...item, stock: item.stock - quantity });
+      saveTenantDoc('inventory', { ...item, stock: item.stock - quantity });
     }
   };
 
@@ -514,10 +528,10 @@ export default function App() {
     const isService = item?.category === 'service';
 
     if (!isService && item) {
-      saveDocument('inventory', { ...item, stock: item.stock + charge.quantity });
+      saveTenantDoc('inventory', { ...item, stock: item.stock + charge.quantity });
     }
     
-    saveDocument('bookings', { 
+    saveTenantDoc('bookings', { 
       ...booking, 
       charges: booking.charges.filter(c => c.id !== chargeId) 
     });
@@ -549,14 +563,14 @@ export default function App() {
       paymentMethod: checkoutData.paymentMethod as any,
     };
 
-    saveDocument('transactions', trans);
-    saveDocument('bookings', { 
+    saveTenantDoc('transactions', trans);
+    saveTenantDoc('bookings', { 
       ...booking, 
       status: 'completed', 
       paymentMethod: checkoutData.paymentMethod as any,
       basePrice: adjustedBasePrice 
     });
-    if (room) saveDocument('rooms', { ...room, status: 'sujo' });
+    if (room) saveTenantDoc('rooms', { ...room, status: 'sujo' });
     setShowCheckoutConf(null);
   };
 
@@ -584,7 +598,7 @@ export default function App() {
     const change = stockUpdateData.type === 'add' ? stockUpdateData.amount : -stockUpdateData.amount;
     const newStock = Math.max(0, item.stock + change);
 
-    saveDocument('inventory', { ...item, stock: newStock });
+    saveTenantDoc('inventory', { ...item, stock: newStock });
     
     setStockUpdateData({ amount: 1, type: 'add', reason: '' });
     setShowStockUpdate(null);
@@ -665,8 +679,13 @@ export default function App() {
 
   const registerUser = (e: React.FormEvent) => {
     e.preventDefault();
-    const user: AppUser = { ...newUserData, id: Math.random().toString(36).substring(2, 9) };
-    saveDocument('users', user);
+    if (!auth.user?.tenantId) return;
+    const user: AppUser = { 
+      ...newUserData, 
+      id: Math.random().toString(36).substring(2, 9),
+      tenantId: auth.user.tenantId
+    };
+    saveTenantDoc('users', user);
     setNewUserData({ name: '', username: '', password: '', role: 'receptionist' });
     setShowUserForm(false);
   };
@@ -676,7 +695,7 @@ export default function App() {
     if (!showChangePasswordModal) return;
     const user = users.find(u => u.id === showChangePasswordModal);
     if (user) {
-      saveDocument('users', { ...user, password: newPassword });
+      saveTenantDoc('users', { ...user, password: newPassword });
       setNewPassword('');
       setShowChangePasswordModal(null);
     }
@@ -696,7 +715,7 @@ export default function App() {
       if (masterKey === '200763') {
         const adminUser = users.find(u => u.username === 'admin');
         if (adminUser) {
-          saveDocument('users', { ...adminUser, password: newPassword });
+          saveTenantDoc('users', { ...adminUser, password: newPassword });
         }
         setIsRecovering(false);
         setRecoveryStep('username');
@@ -729,8 +748,10 @@ export default function App() {
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
+    const tenantId = Math.random().toString(36).substring(2, 9);
     const newUser: AppUser = {
       id: Math.random().toString(36).substring(2, 9),
+      tenantId: tenantId,
       username: registerData.email.split('@')[0],
       password: '123', // Default for demo
       role: 'admin',
@@ -1333,7 +1354,7 @@ export default function App() {
                                 const currentEnd = new Date(booking.checkOut);
                                 const newEnd = addDays(currentEnd, 1);
                                 const roomObj = rooms.find(r => r.id === booking.roomId);
-                                saveDocument('bookings', { 
+                                saveTenantDoc('bookings', { 
                                   ...booking, 
                                   checkOut: newEnd.getTime(),
                                   basePrice: booking.basePrice + (roomObj?.pricePerNight || 0)
@@ -2178,7 +2199,7 @@ export default function App() {
               <form onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
-                saveDocument('inventory', {
+                saveTenantDoc('inventory', {
                   ...editingInventoryItem,
                   name: formData.get('name') as string,
                   price: Number(formData.get('price')),

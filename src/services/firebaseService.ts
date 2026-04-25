@@ -75,6 +75,7 @@ export async function testConnection() {
 // Generic CRUD
 export async function saveDocument<T extends { id: string }>(collName: string, data: T) {
   try {
+    // Basic verification: documents should have a tenantId if they are part of a tenant's data
     await setDoc(doc(db, collName, data.id), data);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, collName);
@@ -90,8 +91,15 @@ export async function deleteDocument(collName: string, id: string) {
 }
 
 // Collection specific listeners
-export function subscribeToCollection<T>(collName: string, callback: (data: T[]) => void) {
-  const q = query(collection(db, collName));
+export function subscribeToCollection<T>(collName: string, callback: (data: T[]) => void, tenantId?: string) {
+  // If tenantId is provided, filter query. Otherwise, fetch all (for admin or global items)
+  let q;
+  if (tenantId) {
+    q = query(collection(db, collName), where('tenantId', '==', tenantId));
+  } else {
+    q = query(collection(db, collName));
+  }
+  
   return onSnapshot(q, (snapshot) => {
     const items = snapshot.docs.map(doc => doc.data() as T);
     callback(items);

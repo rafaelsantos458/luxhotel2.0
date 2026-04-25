@@ -8,6 +8,7 @@ export type ItemCategory = 'beverage' | 'food' | 'service' | 'misc';
 
 export interface Guest {
   id: string;
+  tenantId?: string;
   name: string;
   cpf: string;
   birthDate: string;
@@ -17,6 +18,7 @@ export interface Guest {
 
 export interface InventoryItem {
   id: string;
+  tenantId?: string;
   name: string;
   category: ItemCategory;
   price: number;
@@ -33,6 +35,7 @@ export interface Charge {
 
 export interface Transaction {
   id: string;
+  tenantId?: string;
   type: 'income' | 'expense';
   amount: number;
   category: string;
@@ -44,6 +47,7 @@ export interface Transaction {
 
 export interface Booking {
   id: string;
+  tenantId?: string;
   roomId: string;
   guestId: string;
   checkIn: number;
@@ -59,6 +63,7 @@ export interface Booking {
 
 export interface Room {
   id: string;
+  tenantId?: string;
   number: string;
   type: RoomType;
   pricePerNight: number;
@@ -69,9 +74,10 @@ export type UserRole = 'admin' | 'receptionist';
 
 export interface AppUser {
   id: string;
+  tenantId?: string;
   name: string;
   username: string;
-  password?: string; // Optional because we might not want it in current user state
+  password?: string;
   role: UserRole;
 }
 
