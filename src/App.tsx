@@ -2,6 +2,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { db, auth as firebaseAuth } from './firebase';
+import { 
+  testConnection, 
+  subscribeToCollection, 
+  saveDocument, 
+  deleteDocument 
+} from './services/firebaseService';
 import { 
   format, 
   addMonths, 
@@ -57,9 +64,45 @@ import {
   UserPlus,
   Check,
   TrendingUp,
-  ArrowLeft
+  ArrowLeft,
+  Send
 } from 'lucide-react';
 import { Guest, Room, Booking, AuthState, InventoryItem, RoomType, ItemCategory, Charge, Transaction, AppUser, UserRole } from './types.ts';
+
+const formatPrice = (p: number) => `R$ ${p.toFixed(2).replace('.', ',')}`;
+
+const ItemChargeSelector = ({ item, onAdd }: { item: InventoryItem, onAdd: (qty: number) => void }) => {
+  const [qty, setQty] = useState(1);
+  return (
+    <div className="py-4 flex items-center justify-between group">
+      <div className="flex-1 min-w-0 pr-4">
+        <p className="font-bold text-slate-900 truncate uppercase tracking-tight">{item.name}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">{item.category}</span>
+          <span className="text-[10px] font-bold text-slate-400">{formatPrice(item.price)}</span>
+          <span className={`${item.stock < 10 ? 'text-red-500' : 'text-slate-400'} text-[10px] font-bold`}>• Est: {item.stock}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+          <button onClick={() => setQty(Math.max(1, qty - 1))} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm font-black text-slate-500">-</button>
+          <span className="w-8 text-center text-xs font-black text-slate-900">{qty}</span>
+          <button onClick={() => setQty(qty + 1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm font-black text-slate-500">+</button>
+        </div>
+        <button 
+          disabled={item.stock < qty} 
+          onClick={() => {
+            onAdd(qty);
+            setQty(1);
+          }} 
+          className="p-3 bg-blue-600 text-white hover:bg-slate-900 rounded-xl transition-all disabled:opacity-30 disabled:bg-slate-200"
+        >
+          <Plus size={18} />
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, user: null });
@@ -89,21 +132,30 @@ export default function App() {
     if (!showReservationForm) return;
 
     const room = rooms.find(r => r.id === showReservationForm);
-    const start = new Date(reservationData.checkIn);
-    const end = new Date(reservationData.checkOut);
+    const start = new Date(reservationData.checkIn + 'T12:00:00');
+    const end = new Date(reservationData.checkOut + 'T11:00:00');
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      alert('Datas inválidas selecionadas.');
+      return;
+    }
+
     const diffTime = Math.abs(end.getTime() - start.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     if (editingReservationId) {
-      setBookings(bookings.map(b => b.id === editingReservationId ? {
-        ...b,
-        guestId: reservationData.guestId,
-        checkIn: start.getTime(),
-        checkOut: end.getTime(),
-        basePrice: (room?.pricePerNight || 0) * diffDays,
-        adults: reservationData.adults,
-        children: reservationData.children,
-      } : b));
+      const existing = bookings.find(b => b.id === editingReservationId);
+      if (existing) {
+        saveDocument('bookings', {
+          ...existing,
+          guestId: reservationData.guestId,
+          checkIn: start.getTime(),
+          checkOut: end.getTime(),
+          basePrice: (room?.pricePerNight || 0) * diffDays,
+          adults: reservationData.adults,
+          children: reservationData.children,
+        });
+      }
     } else {
       const booking: Booking = {
         id: Math.random().toString(36).substring(2, 9),
@@ -118,7 +170,7 @@ export default function App() {
         children: reservationData.children,
         registeredBy: auth.user?.name || 'Unknown'
       };
-      setBookings([booking, ...bookings]);
+      saveDocument('bookings', booking);
     }
     
     setShowReservationForm(null);
@@ -127,7 +179,10 @@ export default function App() {
   };
 
   const cancelReservation = (id: string) => {
-    setBookings(bookings.map(b => b.id === id ? { ...b, status: 'canceled' } : b));
+    const booking = bookings.find(b => b.id === id);
+    if (booking) {
+      saveDocument('bookings', { ...booking, status: 'canceled' });
+    }
     setShowReservationForm(null);
     setEditingReservationId(null);
     setGuestSearchTerm('');
@@ -149,11 +204,7 @@ export default function App() {
       })
     );
   };
-  const [users, setUsers] = useState<AppUser[]>([
-    { id: '1', name: 'Administrador', username: 'admin', password: '123', role: 'admin' },
-    { id: '2', name: 'Recepcionista', username: 'recep', password: '123', role: 'receptionist' }
-  ]);
-  
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [roomCategories, setRoomCategories] = useState<{ value: RoomType; label: string; price: number }[]>([
     { value: 'single', label: 'Solteiro', price: 150 },
     { value: 'double', label: 'Duplo', price: 250 },
@@ -161,44 +212,92 @@ export default function App() {
     { value: 'triple', label: 'Triplo', price: 350 },
   ]);
 
-  const [rooms, setRooms] = useState<Room[]>(() => {
-    return Array.from({ length: 20 }, (_, i) => ({
-      id: (i + 1).toString(),
-      number: (i + 1).toString().padStart(2, '0'),
-      type: 'couple',
-      pricePerNight: 220,
-      status: 'vago'
-    }));
-  });
-  
-  const [guests, setGuests] = useState<Guest[]>([
-    { id: 'g1', name: 'João Silva', cpf: '123.456.789-00', birthDate: '1990-01-01', email: 'joao@example.com' }
-  ]);
-  const [editingReservationId, setEditingReservationId] = useState<string | null>(null);
-  const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
-  const [inventory, setInventory] = useState<InventoryItem[]>([
-    { id: 'i1', name: 'Água Mineral 500ml', category: 'beverage', price: 5, stock: 50 },
-    { id: 'i2', name: 'Cerveja Lata 350ml', category: 'beverage', price: 8, stock: 24 },
-    { id: 'i3', name: 'Refrigerante Lata 350ml', category: 'beverage', price: 6, stock: 30 },
-    { id: 'i4', name: 'Chocolate Barra', category: 'food', price: 10, stock: 15 },
-    { id: 'i5', name: 'Salgadinho Pacote', category: 'food', price: 7, stock: 20 },
-    { id: 's1', name: 'Lavanderia - Peça', category: 'service', price: 15, stock: 999 },
-    { id: 's2', name: 'Translado Aeroporto', category: 'service', price: 80, stock: 999 },
-    { id: 'o1', name: 'Estacionamento Diário', category: 'misc', price: 25, stock: 999 },
-  ]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [guests, setGuests] = useState<Guest[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+
+  // Initial Sync
+  useEffect(() => {
+    setIsFirebaseReady(true);
+    testConnection();
+  }, []);
+
+  useEffect(() => {
+    if (!isFirebaseReady) return;
+    
+    // Subscribe to all collections
+    const unsubRooms = subscribeToCollection<Room>('rooms', setRooms);
+    const unsubGuests = subscribeToCollection<Guest>('guests', setGuests);
+    const unsubInventory = subscribeToCollection<InventoryItem>('inventory', setInventory);
+    const unsubBookings = subscribeToCollection<Booking>('bookings', (data) => {
+      setBookings(data.sort((a, b) => b.checkIn - a.checkIn));
+    });
+    const unsubTransactions = subscribeToCollection<Transaction>('transactions', setTransactions);
+    const unsubUsers = subscribeToCollection<AppUser>('users', setUsers);
+
+    return () => {
+      unsubRooms();
+      unsubGuests();
+      unsubInventory();
+      unsubBookings();
+      unsubTransactions();
+      unsubUsers();
+    };
+  }, [isFirebaseReady]);
+
+  // Initial Data Bootstrap (only if empty) - for Demo purposes
+  useEffect(() => {
+    if (isFirebaseReady) {
+      if (rooms.length === 0) {
+        const initialRooms: Room[] = Array.from({ length: 20 }, (_, i) => ({
+          id: (i + 1).toString(),
+          number: (i + 1).toString().padStart(2, '0'),
+          type: 'couple',
+          pricePerNight: 220,
+          status: 'vago'
+        }));
+        initialRooms.forEach(r => saveDocument('rooms', r));
+      }
+      if (users.length === 0) {
+        const initialUsers: AppUser[] = [
+          { id: '1', name: 'Administrador', username: 'admin', password: '123', role: 'admin' },
+          { id: '2', name: 'Recepcionista', username: 'recep', password: '123', role: 'receptionist' }
+        ];
+        initialUsers.forEach(u => saveDocument('users', u));
+      }
+      if (inventory.length === 0) {
+        const initialItems: InventoryItem[] = [
+          { id: 'i1', name: 'Água Mineral 500ml', category: 'beverage', price: 5, stock: 50 },
+          { id: 'i2', name: 'Cerveja Lata 350ml', category: 'beverage', price: 8, stock: 24 },
+          { id: 'i3', name: 'Refrigerante Lata 350ml', category: 'beverage', price: 6, stock: 30 },
+          { id: 'i4', name: 'Chocolate Barra', category: 'food', price: 10, stock: 15 },
+          { id: 'i5', name: 'Salgadinho Pacote', category: 'food', price: 7, stock: 20 },
+          { id: 's1', name: 'Lavanderia - Peça', category: 'service', price: 15, stock: 999 },
+          { id: 's2', name: 'Translado Aeroporto', category: 'service', price: 80, stock: 999 },
+          { id: 'o1', name: 'Estacionamento Diário', category: 'misc', price: 25, stock: 999 },
+        ];
+        initialItems.forEach(item => saveDocument('inventory', item));
+      }
+    }
+  }, [rooms.length, users.length, inventory.length, isFirebaseReady]);
+
   
   // Modals / Selection States
   const [showCheckIn, setShowCheckIn] = useState<string | null>(null); // roomId
   const [showAddCharge, setShowAddCharge] = useState<string | null>(null); // bookingId
   const [showCheckoutConf, setShowCheckoutConf] = useState<string | null>(null); // bookingId
-  const [checkoutData, setCheckoutData] = useState({ paymentMethod: 'cash' as 'cash' | 'card' | 'pix', daysToCharge: 1 });
+  const [checkoutData, setCheckoutData] = useState({ paymentMethod: 'cash' as 'cash' | 'card' | 'transfer' | 'pix', daysToCharge: 1, discount: 0 });
   const [roomConfig, setRoomConfig] = useState<string | null>(null); // roomId
   const [showGuestForm, setShowGuestForm] = useState(false);
   const [showItemForm, setShowItemForm] = useState(false);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showStockUpdate, setShowStockUpdate] = useState<string | null>(null); // itemId
+  const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
+  const [editingReservationId, setEditingReservationId] = useState<string | null>(null);
   const [showCategoryPrices, setShowCategoryPrices] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState<string | null>(null);
@@ -212,7 +311,7 @@ export default function App() {
   const [newUserData, setNewUserData] = useState({ name: '', username: '', password: '', role: 'receptionist' as UserRole });
   const [newPassword, setNewPassword] = useState('');
   
-  const [newGuest, setNewGuest] = useState({ name: '', cpf: '', birthDate: '', email: '' });
+  const [newGuest, setNewGuest] = useState({ name: '', cpf: '', birthDate: '', email: '', address: '' });
   const [newItem, setNewItem] = useState({ name: '', category: 'beverage' as ItemCategory, price: 0, stock: 0 });
   const [newExpense, setNewExpense] = useState({ description: '', amount: 0, category: 'Maintenance' });
   const [checkInData, setCheckInData] = useState({ 
@@ -223,7 +322,7 @@ export default function App() {
     children: 0,
   });
   
-  const [loginForm, setLoginForm] = useState({ user: 'admin', pass: '1234' });
+  const [loginForm, setLoginForm] = useState({ user: 'admin', pass: '123' });
   const [error, setError] = useState('');
   const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -233,7 +332,7 @@ export default function App() {
     if (showCheckoutConf) {
       const booking = bookings.find(b => b.id === showCheckoutConf);
       const defaultDays = booking ? Math.max(1, Math.ceil((booking.checkOut - booking.checkIn) / 86400000)) : 1;
-      setCheckoutData({ paymentMethod: 'cash', daysToCharge: defaultDays });
+      setCheckoutData({ paymentMethod: 'cash', daysToCharge: defaultDays, discount: 0 });
     }
 
     return () => clearInterval(timer);
@@ -252,41 +351,48 @@ export default function App() {
 
   const addRoom = () => {
     const nextNum = (rooms.length + 1).toString().padStart(2, '0');
-    setRooms([...rooms, { id: nextNum, number: nextNum, type: 'couple', pricePerNight: 220, status: 'vago' }]);
+    saveDocument('rooms', { id: nextNum, number: nextNum, type: 'couple', pricePerNight: 220, status: 'vago' });
   };
 
   const updateRoomStatus = (roomId: string, status: 'vago' | 'sujo' | 'manuntencao') => {
-    setRooms(rooms.map(r => r.id === roomId ? { ...r, status } : r));
+    const room = rooms.find(r => r.id === roomId);
+    if (room) saveDocument('rooms', { ...room, status });
   };
 
   const updateRoomType = (roomId: string, type: RoomType) => {
     const category = roomCategories.find(c => c.value === type);
-    setRooms(rooms.map(r => r.id === roomId ? { ...r, type, pricePerNight: category?.price || r.pricePerNight } : r));
-    setRoomConfig(null);
+    const room = rooms.find(r => r.id === roomId);
+    if (room) saveDocument('rooms', { ...room, type, pricePerNight: category?.price || room.pricePerNight });
+  };
+
+  const updateRoomNumber = (roomId: string, number: string) => {
+    const room = rooms.find(r => r.id === roomId);
+    if (room) saveDocument('rooms', { ...room, number });
   };
 
   const updateIndividualRoomPrice = (roomId: string, price: number) => {
-    setRooms(rooms.map(r => r.id === roomId ? { ...r, pricePerNight: price } : r));
+    const room = rooms.find(r => r.id === roomId);
+    if (room) saveDocument('rooms', { ...room, pricePerNight: price });
   };
 
   const registerGuest = (e: React.FormEvent) => {
     e.preventDefault();
     const guest: Guest = { ...newGuest, id: Math.random().toString(36).substring(2, 9) };
-    setGuests([...guests, guest]);
+    saveDocument('guests', guest);
     
     // If registering during check-in, auto-select this guest
     if (showCheckIn) {
       setCheckInData(prev => ({ ...prev, guestId: guest.id }));
     }
 
-    setNewGuest({ name: '', cpf: '', birthDate: '', email: '' });
+    setNewGuest({ name: '', cpf: '', birthDate: '', email: '', address: '' });
     setShowGuestForm(false);
   };
 
   const registerItem = (e: React.FormEvent) => {
     e.preventDefault();
     const item: InventoryItem = { ...newItem, id: Math.random().toString(36).substring(2, 9) };
-    setInventory([...inventory, item]);
+    saveDocument('inventory', item);
     setNewItem({ name: '', category: 'beverage', price: 0, stock: 0 });
     setShowItemForm(false);
   };
@@ -301,7 +407,7 @@ export default function App() {
       description: newExpense.description,
       timestamp: Date.now()
     };
-    setTransactions([...transactions, trans]);
+    saveDocument('transactions', trans);
     setNewExpense({ description: '', amount: 0, category: 'Maintenance' });
     setShowExpenseForm(false);
   };
@@ -314,6 +420,11 @@ export default function App() {
     const checkInTime = new Date(checkInData.checkInDate + 'T12:00:00').getTime();
     const checkOutTime = new Date(checkInData.checkOutDate + 'T11:00:00').getTime();
     
+    if (isNaN(checkInTime) || isNaN(checkOutTime)) {
+      alert('Datas de entrada ou saída inválidas.');
+      return;
+    }
+
     // Calculate days
     const diffTime = checkOutTime - checkInTime;
     const diffDays = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
@@ -333,14 +444,15 @@ export default function App() {
     };
 
     // Remove or complete existing reservation for this room/guest if it exists
-    const updatedBookings = bookings.map(b => 
-      b.roomId === room.id && b.guestId === checkInData.guestId && b.status === 'reserved' 
-        ? { ...b, status: 'completed' as const } 
-        : b
-    );
+    bookings.forEach(b => {
+      if (b.roomId === room.id && b.guestId === checkInData.guestId && b.status === 'reserved') {
+        saveDocument('bookings', { ...b, status: 'completed' });
+      }
+    });
 
-    setBookings([booking, ...updatedBookings]);
-    setRooms(rooms.map(r => r.id === room.id ? { ...r, status: 'occupied' } : r));
+    saveDocument('bookings', booking);
+    saveDocument('rooms', { ...room, status: 'occupied' });
+    
     setCheckInData({ 
       guestId: '', 
       checkInDate: new Date().toISOString().split('T')[0], 
@@ -352,29 +464,61 @@ export default function App() {
     setGuestSearchTerm('');
   };
 
-  const addCharge = (bookingId: string, itemId: string) => {
+  const addCharge = (bookingId: string, itemId: string, quantity: number = 1) => {
     const item = inventory.find(i => i.id === itemId);
-    if (!item || item.stock <= 0) return;
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!item || !booking) return;
+    
+    const isService = item.category === 'service';
+    if (!isService && item.stock < quantity) {
+      alert('Estoque insuficiente para esta quantidade.');
+      return;
+    }
 
-    const newCharge: Charge = {
-      id: Math.random().toString(36).substring(2, 9),
-      itemId,
-      quantity: 1,
-      priceAtTime: item.price,
-      timestamp: Date.now()
-    };
+    const existingChargeIndex = booking.charges.findIndex(c => c.itemId === itemId && c.priceAtTime === item.price);
+    
+    let newCharges;
+    if (existingChargeIndex > -1) {
+      newCharges = [...booking.charges];
+      newCharges[existingChargeIndex] = {
+        ...newCharges[existingChargeIndex],
+        quantity: newCharges[existingChargeIndex].quantity + quantity,
+        timestamp: Date.now()
+      };
+    } else {
+      const newCharge: Charge = {
+        id: Math.random().toString(36).substring(2, 9),
+        itemId,
+        quantity,
+        priceAtTime: item.price,
+        timestamp: Date.now()
+      };
+      newCharges = [...booking.charges, newCharge];
+    }
+    
+    saveDocument('bookings', { ...booking, charges: newCharges });
 
-    setInventory(inventory.map(i => i.id === itemId ? { ...i, stock: i.stock - 1 } : i));
-    setBookings(bookings.map(b => b.id === bookingId ? { ...b, charges: [...b.charges, newCharge] } : b));
+    if (!isService) {
+      saveDocument('inventory', { ...item, stock: item.stock - quantity });
+    }
   };
 
   const removeCharge = (bookingId: string, chargeId: string) => {
     const booking = bookings.find(b => b.id === bookingId);
     const charge = booking?.charges.find(c => c.id === chargeId);
-    if (!charge) return;
+    if (!booking || !charge) return;
 
-    setInventory(inventory.map(i => i.id === charge.itemId ? { ...i, stock: i.stock + charge.quantity } : i));
-    setBookings(bookings.map(b => b.id === bookingId ? { ...b, charges: b.charges.filter(c => c.id !== chargeId) } : b));
+    const item = inventory.find(i => i.id === charge.itemId);
+    const isService = item?.category === 'service';
+
+    if (!isService && item) {
+      saveDocument('inventory', { ...item, stock: item.stock + charge.quantity });
+    }
+    
+    saveDocument('bookings', { 
+      ...booking, 
+      charges: booking.charges.filter(c => c.id !== chargeId) 
+    });
   };
 
   const finalizeCheckOut = (bookingId: string) => {
@@ -389,26 +533,28 @@ export default function App() {
     const adjustedBasePrice = pricePerNight * checkoutData.daysToCharge;
     
     const totalCharges = booking.charges.reduce((sum, c) => sum + (c.priceAtTime * c.quantity), 0);
-    const total = adjustedBasePrice + totalCharges;
+    const subtotal = adjustedBasePrice + totalCharges;
+    const total = Math.max(0, subtotal - checkoutData.discount);
     
     const trans: Transaction = {
       id: `T-${bookingId}-${Date.now()}`,
       type: 'income',
       amount: total,
       category: 'Stay',
-      description: `Checkout: Quarto ${room?.number || '?'} | Cliente: ${guest?.name || 'Unknown'} | Ref: ${bookingId} | Op: ${auth.user?.name || 'Sistema'}`,
+      description: `Checkout: Quarto ${room?.number || '?'} | Cliente: ${guest?.name || 'Unknown'} | Ref: ${bookingId} ${checkoutData.discount > 0 ? `(Desc: ${formatPrice(checkoutData.discount)})` : ''} | Op: ${auth.user?.name || 'Sistema'}`,
       timestamp: Date.now(),
-      refId: bookingId
+      refId: bookingId,
+      paymentMethod: checkoutData.paymentMethod as any,
     };
 
-    setTransactions([...transactions, trans]);
-    setBookings(bookings.map(b => b.id === bookingId ? { 
-      ...b, 
+    saveDocument('transactions', trans);
+    saveDocument('bookings', { 
+      ...booking, 
       status: 'completed', 
       paymentMethod: checkoutData.paymentMethod as any,
       basePrice: adjustedBasePrice 
-    } : b));
-    setRooms(rooms.map(r => r.id === booking.roomId ? { ...r, status: 'sujo' } : r));
+    });
+    if (room) saveDocument('rooms', { ...room, status: 'sujo' });
     setShowCheckoutConf(null);
   };
 
@@ -436,11 +582,7 @@ export default function App() {
     const change = stockUpdateData.type === 'add' ? stockUpdateData.amount : -stockUpdateData.amount;
     const newStock = Math.max(0, item.stock + change);
 
-    setInventory(inventory.map(i => i.id === showStockUpdate ? { ...i, stock: newStock } : i));
-    
-    // Log as a special transaction or just reason (user mentioned "reason")
-    // I will log as a transaction if it's a significant change or just keep it simple.
-    // The user wants "options to add a reason for the stock change".
+    saveDocument('inventory', { ...item, stock: newStock });
     
     setStockUpdateData({ amount: 1, type: 'add', reason: '' });
     setShowStockUpdate(null);
@@ -471,7 +613,7 @@ export default function App() {
     
     // Stay Info
     doc.setFontSize(11);
-    doc.text("Resumo da Estadiana:", 20, 75);
+    doc.text(`Resumo da Estadia (Quarto ${rooms.find(r => r.id === booking.roomId)?.number}):`, 20, 75);
     doc.setFontSize(10);
     doc.text(`Check-in: ${new Date(booking.checkIn).toLocaleDateString()}`, 25, 85);
     doc.text(`Check-out: ${new Date(booking.checkOut).toLocaleDateString()}`, 25, 95);
@@ -522,7 +664,7 @@ export default function App() {
   const registerUser = (e: React.FormEvent) => {
     e.preventDefault();
     const user: AppUser = { ...newUserData, id: Math.random().toString(36).substring(2, 9) };
-    setUsers([...users, user]);
+    saveDocument('users', user);
     setNewUserData({ name: '', username: '', password: '', role: 'receptionist' });
     setShowUserForm(false);
   };
@@ -530,9 +672,12 @@ export default function App() {
   const handleUpdatePassword = (e: React.FormEvent) => {
     e.preventDefault();
     if (!showChangePasswordModal) return;
-    setUsers(users.map(u => u.id === showChangePasswordModal ? { ...u, password: newPassword } : u));
-    setNewPassword('');
-    setShowChangePasswordModal(null);
+    const user = users.find(u => u.id === showChangePasswordModal);
+    if (user) {
+      saveDocument('users', { ...user, password: newPassword });
+      setNewPassword('');
+      setShowChangePasswordModal(null);
+    }
   };
 
   const handleAdminRecovery = (e: React.FormEvent) => {
@@ -547,7 +692,10 @@ export default function App() {
     } else {
       // Validando a "Master Key" (Chave de segurança do criador)
       if (masterKey === '200763') {
-        setUsers(users.map(u => u.username === 'admin' ? { ...u, password: newPassword } : u));
+        const adminUser = users.find(u => u.username === 'admin');
+        if (adminUser) {
+          saveDocument('users', { ...adminUser, password: newPassword });
+        }
         setIsRecovering(false);
         setRecoveryStep('username');
         setNewPassword('');
@@ -563,10 +711,15 @@ export default function App() {
   const stats = useMemo(() => {
     const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
     const expense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-    return { income, expense, balance: income - expense };
-  }, [transactions]);
+    
+    const byMethod = transactions.filter(t => t.type === 'income').reduce((acc, t) => {
+      const m = t.paymentMethod || 'Outros';
+      acc[m] = (acc[m] || 0) + t.amount;
+      return acc;
+    }, {} as Record<string, number>);
 
-  const formatPrice = (p: number) => `R$ ${p.toFixed(2).replace('.', ',')}`;
+    return { income, expense, balance: income - expense, byMethod };
+  }, [transactions]);
 
   const [isLanding, setIsLanding] = useState(true);
   const [landingView, setLandingView] = useState<'home' | 'pricing' | 'register' | 'login'>('home');
@@ -574,13 +727,14 @@ export default function App() {
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
-    const newUser = {
+    const newUser: AppUser = {
+      id: Math.random().toString(36).substring(2, 9),
       username: registerData.email.split('@')[0],
       password: '123', // Default for demo
-      role: 'admin' as const,
+      role: 'admin',
       name: registerData.hotelName
     };
-    setUsers([...users, newUser]);
+    saveDocument('users', newUser);
     setError('Conta criada! Use seu email (até o @) e senha "123" para entrar.');
     setLandingView('login');
   };
@@ -901,7 +1055,7 @@ export default function App() {
           <div className="w-8 h-8 bg-slate-900 text-white rounded-lg flex items-center justify-center shadow-md">
             <Hotel size={18} strokeWidth={2.5} />
           </div>
-          <h1 className="text-sm font-black tracking-tight text-slate-900 uppercase">Meu Hotel</h1>
+          <h1 className="text-sm font-black tracking-tight text-slate-900 uppercase italic">Meu Hotel <span className="text-blue-600">PRO</span></h1>
         </div>
         <nav className="flex-1 space-y-2">
           <button onClick={() => setView('map')} className={`sidebar-item w-full ${view === 'map' ? 'active' : ''}`}><div className="sidebar-dot" /><LayoutGrid size={16} /> Mapa de Quartos</button>
@@ -935,7 +1089,7 @@ export default function App() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 mr-4 pr-4 border-r border-slate-100">
                <div className="text-right">
-                  <p className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{auth.user?.name}</p>
+                   <p className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{auth.user?.name || 'Usuário'}</p>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{auth.user?.role === 'admin' ? 'Administrador' : 'Recepcionista'}</p>
                </div>
                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 font-black text-xs">
@@ -955,7 +1109,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 p-8 overflow-auto">
+        <main className={`flex-1 p-8 overflow-auto ${view === 'map' ? 'bg-slate-50/50' : 'bg-white'}`}>
           {view === 'map' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 max-w-screen-2xl mx-auto">
               {rooms.map(room => {
@@ -1038,7 +1192,7 @@ export default function App() {
                             >
                               <option value="vago">VAGO</option>
                               <option value="sujo">SUJO</option>
-                              <option value="manuntencao">MANUT.</option>
+                              <option value="manuntencao">MANUTENÇÃO</option>
                             </select>
                           )}
                         </div>
@@ -1098,8 +1252,8 @@ export default function App() {
                                    const item = inventory.find(i => i.id === c.itemId);
                                    return (
                                      <div key={c.id} className="text-[8px] text-slate-600 flex justify-between bg-white px-1.5 py-0.5 rounded border border-slate-50">
-                                       <span className="truncate pr-1">• {item?.name}</span>
-                                       <span className="font-bold">{formatPrice(c.priceAtTime)}</span>
+                                       <span className="truncate pr-1">• {c.quantity > 1 ? `${c.quantity}x ` : ''}{item?.name}</span>
+                                       <span className="font-bold">{formatPrice(c.priceAtTime * c.quantity)}</span>
                                      </div>
                                    );
                                  })
@@ -1177,11 +1331,11 @@ export default function App() {
                                 const currentEnd = new Date(booking.checkOut);
                                 const newEnd = addDays(currentEnd, 1);
                                 const roomObj = rooms.find(r => r.id === booking.roomId);
-                                setBookings(bookings.map(b => b.id === booking.id ? { 
-                                  ...b, 
+                                saveDocument('bookings', { 
+                                  ...booking, 
                                   checkOut: newEnd.getTime(),
-                                  basePrice: b.basePrice + (roomObj?.pricePerNight || 0)
-                                } : b));
+                                  basePrice: booking.basePrice + (roomObj?.pricePerNight || 0)
+                                });
                               }} 
                               title="Renovar 1 Diária"
                               className="p-1.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-lg hover:bg-blue-600 hover:text-white transition-all shadow-sm"
@@ -1209,12 +1363,12 @@ export default function App() {
                 <thead><tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><th className="px-6 py-4 text-left">Hóspede</th><th className="px-6 py-4 text-left">Documentação</th><th className="px-6 py-4 text-left">Contato</th><th className="px-6 py-4 text-right">Ação</th></tr></thead>
                 <tbody className="divide-y divide-slate-50">
                    {guests.map(g => (
-                     <tr key={g.id} className="text-sm hover:bg-slate-50/40">
-                       <td className="px-6 py-5"><p className="font-bold text-slate-900">{g.name}</p><p className="text-[10px] text-slate-400 font-medium">Nasc: {g.birthDate}</p></td>
-                       <td className="px-6 py-5 font-mono text-slate-600">{g.cpf}</td>
-                       <td className="px-6 py-5 text-slate-500 font-medium">{g.email}</td>
-                       <td className="px-6 py-5 text-right"><button onClick={() => setGuests(guests.filter(x => x.id !== g.id))} className="text-slate-200 hover:text-red-500 p-2"><Trash2 size={16} /></button></td>
-                     </tr>
+                      <tr key={g.id} className="text-sm hover:bg-slate-50/40">
+                        <td className="px-6 py-5"><p className="font-bold text-slate-900">{g.name}</p><p className="text-[10px] text-slate-400 font-medium uppercase tracking-tight">Nasc: {g.birthDate}</p></td>
+                        <td className="px-6 py-5 font-mono text-xs text-slate-600">{g.cpf}</td>
+                        <td className="px-6 py-5"><p className="text-slate-500 font-medium">{g.email || 'N/I'}</p><p className="text-[9px] text-slate-400 font-medium italic truncate max-w-[200px]">{g.address || 'Sem endereço registrado'}</p></td>
+                        <td className="px-6 py-5 text-right"><button onClick={() => deleteDocument('guests', g.id)} className="text-slate-100 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button></td>
+                      </tr>
                    ))}
                    {guests.length === 0 && <tr><td colSpan={4} className="py-24 text-center text-slate-300 text-sm font-medium italic">Banco de dados vazio.</td></tr>}
                 </tbody>
@@ -1293,7 +1447,7 @@ export default function App() {
                             </td>
                             <td className="px-6 py-5 text-right flex gap-2 justify-end">
                               <button onClick={() => setEditingInventoryItem(item)} className="text-slate-300 hover:text-blue-500 p-2"><Settings size={16} /></button>
-                              <button onClick={() => setInventory(inventory.filter(x => x.id !== item.id))} className="text-slate-100 hover:text-red-500 p-2"><Trash2 size={16} /></button>
+                              <button onClick={() => deleteDocument('inventory', item.id)} className="text-slate-100 hover:text-red-500 p-2"><Trash2 size={16} /></button>
                             </td>
                           </tr>
                         ))}
@@ -1414,14 +1568,16 @@ export default function App() {
                 </div>
                 <button 
                   onClick={() => {
-                    const csvRows = [
-                      ['RELATORIO DE OCUPACAO DIARIA'],
-                      ['Data:', format(new Date(), 'dd/MM/yyyy HH:mm')],
-                      [''],
-                      ['Quarto', 'Status', 'Categoria', 'Preco Diaria'],
+                      const csvRows = [
+                        ['RELATÓRIO DE OCUPAÇÃO DIÁRIA'],
+                        ['Data:', format(new Date(), 'dd/MM/yyyy HH:mm')],
+                        [''],
+                        ['Quarto', 'Status', 'Categoria', 'Hóspedes', 'Preço Diária'],
                       ...rooms.map(room => {
-                        const statusMap: any = { vago: 'Livre', occupied: 'Ocupado', sujo: 'Sujo', manuntencao: 'Manutencao' };
-                        return [room.number, statusMap[room.status] || room.status, room.type, `R$ ${room.pricePerNight}`];
+                        const statusMap: any = { vago: 'Livre', occupied: 'Ocupado', sujo: 'Sujo', manuntencao: 'Manutenção' };
+                        const activeBooking = bookings.find(b => b.roomId === room.id && b.status === 'active');
+                        const guestsCount = activeBooking ? (activeBooking.adults + activeBooking.children) : 0;
+                        return [room.number, statusMap[room.status] || room.status, room.type, guestsCount, `R$ ${room.pricePerNight}`];
                       })
                     ];
                     const csvContent = csvRows.map(e => e.join(";")).join("\n");
@@ -1441,17 +1597,23 @@ export default function App() {
               </div>
 
               {/* Stats Grid */}
-              <div className="grid grid-cols-4 gap-6">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
                 {[
                   { label: 'Taxa de Ocupação', val: `${((rooms.filter(r => ['occupied', 'expiring', 'delayed'].includes(r.status)).length / rooms.length) * 100).toFixed(1)}%`, sub: 'Relativo ao total', color: 'blue' },
                   { label: 'Quartos Disponíveis', val: rooms.filter(r => r.status === 'vago').length, sub: 'Vagos e prontos', color: 'emerald' },
                   { label: 'Quartos Ocupados', val: rooms.filter(r => ['occupied', 'expiring', 'delayed'].includes(r.status)).length, sub: 'Com hóspedes ativos', color: 'blue' },
+                  { label: 'Total de Hóspedes', val: bookings.filter(b => b.status === 'active').reduce((acc, b) => acc + (b.adults || 0) + (b.children || 0), 0), sub: 'Hospedados agora', color: 'indigo' },
                   { label: 'Fora de Serviço', val: rooms.filter(r => r.status === 'manuntencao' || r.status === 'sujo').length, sub: 'Limpeza/Manutenção', color: 'amber' },
                 ].map((s, i) => (
-                  <div key={i} className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
+                  <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
                     <div className="relative">
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{s.label}</div>
-                      <div className={`text-4xl font-black ${s.color === 'blue' ? 'text-blue-600' : s.color === 'emerald' ? 'text-emerald-600' : 'text-amber-600'} tracking-tighter`}>{s.val}</div>
+                      <div className={`text-3xl font-black ${
+                        s.color === 'blue' ? 'text-blue-600' : 
+                        s.color === 'emerald' ? 'text-emerald-600' : 
+                        s.color === 'indigo' ? 'text-indigo-600' : 
+                        'text-amber-600'
+                      } tracking-tighter`}>{s.val}</div>
                       <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase">{s.sub}</div>
                     </div>
                   </div>
@@ -1465,6 +1627,7 @@ export default function App() {
                     <tr className="bg-slate-50/50">
                       <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Identificação</th>
                       <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status Atual</th>
+                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Hóspedes</th>
                       <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Unidade</th>
                       <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor Diária</th>
                       <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ação</th>
@@ -1488,6 +1651,14 @@ export default function App() {
                              }`}>
                                 {room.status === 'vago' ? 'Livre' : room.status === 'sujo' ? 'Limpando' : room.status === 'manuntencao' ? 'Manutenção' : 'Hospedado'}
                              </span>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="text-xs font-bold text-slate-500">
+                            {(() => {
+                              const b = bookings.find(bk => bk.roomId === room.id && bk.status === 'active');
+                              return b ? `${b.adults + b.children} (H:${b.adults} C:${b.children})` : '-';
+                            })()}
                           </div>
                         </td>
                         <td className="px-8 py-5">
@@ -1524,6 +1695,17 @@ export default function App() {
 
           {view === 'finance' && auth.user?.role === 'admin' && (
             <div className="max-w-6xl mx-auto space-y-10">
+               <div className="flex flex-wrap gap-4 px-2">
+                 {Object.entries(stats.byMethod || {}).map(([method, amount]) => (
+                   <div key={method} className="bg-white px-5 py-3 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-blue-500" />
+                      <div>
+                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{method}</p>
+                         <p className="text-sm font-black text-slate-900 leading-none">{formatPrice(amount as number)}</p>
+                      </div>
+                   </div>
+                 ))}
+               </div>
                <div className="grid md:grid-cols-3 gap-8">
                  <FinanceCard label="Receita Bruta" value={stats.income} icon={<ArrowUpCircle className="text-emerald-500" />} />
                  <FinanceCard label="Despesas" value={stats.expense} icon={<ArrowDownCircle className="text-red-500" />} />
@@ -1536,13 +1718,14 @@ export default function App() {
                     <button className="text-[10px] font-bold text-blue-600 hover:underline">EXPORTAR RELATÓRIO</button>
                   </div>
                   <table className="w-full">
-                    <thead><tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><th className="px-6 py-4 text-left">Data</th><th className="px-6 py-4 text-left">Descrição</th><th className="px-6 py-4 text-left">Categoria</th><th className="px-6 py-4 text-right">Valor</th></tr></thead>
+                    <thead><tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><th className="px-6 py-4 text-left">Data</th><th className="px-6 py-4 text-left">Descrição</th><th className="px-6 py-4 text-left">Categoria</th><th className="px-6 py-4 text-left">Pagamento</th><th className="px-6 py-4 text-right">Valor</th></tr></thead>
                     <tbody className="divide-y divide-slate-50">
                       {transactions.sort((a,b) => b.timestamp - a.timestamp).map(t => (
                         <tr key={t.id} className="text-sm hover:bg-slate-50/30">
                           <td className="px-6 py-4 text-slate-400 font-medium">{new Date(t.timestamp).toLocaleDateString()}</td>
                           <td className="px-6 py-4 font-bold text-slate-800">{t.description}</td>
                           <td className="px-6 py-4 uppercase text-[10px] font-black text-slate-300">{t.category}</td>
+                           <td className="px-6 py-4 uppercase text-[10px] font-black text-slate-400">{t.paymentMethod || '-'}</td>
                           <td className={`px-6 py-4 text-right font-mono font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
                             {t.type === 'income' ? '+' : '-'} {formatPrice(t.amount)}
                           </td>
@@ -1638,7 +1821,7 @@ export default function App() {
                                <Settings size={16} />
                             </button>
                             {u.username !== 'admin' && (
-                              <button onClick={() => setUsers(users.filter(x => x.id !== u.id))} className="text-slate-200 hover:text-red-500 p-2 border border-slate-100 rounded-lg hover:border-red-100 transition-all">
+                              <button onClick={() => deleteDocument('users', u.id)} className="text-slate-200 hover:text-red-500 p-2 border border-slate-100 rounded-lg hover:border-red-100 transition-all">
                                  <Trash2 size={16} />
                               </button>
                             )}
@@ -1656,12 +1839,22 @@ export default function App() {
       {/* Modals & Overlays */}
       <AnimatePresence>
         {roomConfig && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setRoomConfig(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
-              <h3 className="text-xl font-black mb-6 leading-tight">Configurar Quarto {rooms.find(r => r.id === roomConfig)?.number}</h3>
+          <div key="modal-room-config" className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div key="backdrop-room-config" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setRoomConfig(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div key="content-room-config" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
+              <h3 className="text-xl font-black mb-6 leading-tight uppercase tracking-tighter">Configurar Quarto</h3>
               
               <div className="space-y-6">
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">NÚMERO DO QUARTO</label>
+                   <input 
+                     type="text" 
+                     className="minimal-input font-bold" 
+                     value={rooms.find(r => r.id === roomConfig)?.number || ''}
+                     onChange={(e) => updateRoomNumber(roomConfig!, e.target.value)}
+                   />
+                </div>
+
                 <div>
                   <p className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest">Categoria do Quarto</p>
                   <div className="grid grid-cols-2 gap-3">
@@ -1698,9 +1891,9 @@ export default function App() {
         )}
 
         {showCheckoutConf && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCheckoutConf(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl bg-white rounded-3xl p-10 shadow-2xl flex flex-col max-h-[85vh]">
+          <div key="modal-checkout-conf" className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div key="backdrop-checkout-conf" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCheckoutConf(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div key="content-checkout-conf" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl bg-white rounded-3xl p-10 shadow-2xl flex flex-col max-h-[85vh]">
              <div className="flex justify-between items-start mb-8">
                <div>
                   <h3 className="text-2xl font-black text-slate-900">Conferência de Checkout</h3>
@@ -1715,7 +1908,8 @@ export default function App() {
                const defaultDays = booking ? Math.max(1, Math.ceil((booking.checkOut - booking.checkIn) / (1000 * 60 * 60 * 24))) : 1;
                const pricePerNight = room?.pricePerNight || (booking ? booking.basePrice / defaultDays : 0);
                const chargesTotal = booking?.charges.reduce((s, c) => s + (c.priceAtTime * c.quantity), 0) || 0;
-               const currentTotal = (pricePerNight * checkoutData.daysToCharge) + chargesTotal;
+               const subtotalPrev = (pricePerNight * checkoutData.daysToCharge) + chargesTotal;
+               const currentTotal = Math.max(0, subtotalPrev - (checkoutData.discount || 0));
 
                return (
                  <>
@@ -1754,7 +1948,8 @@ export default function App() {
                                {([
                                  { id: 'pix', label: 'PIX', icon: <ArrowRightLeft size={14} /> },
                                  { id: 'cash', label: 'Dinheiro', icon: <DollarSign size={14} /> },
-                                 { id: 'card', label: 'Cartão', icon: <CreditCard size={14} /> }
+                                 { id: 'card', label: 'Cartão', icon: <CreditCard size={14} /> },
+                                 { id: 'transfer', label: 'Transferência', icon: <Send size={14} /> }
                                ] as const).map(method => (
                                  <button 
                                   key={`pay-${method.id}`}
@@ -1765,6 +1960,16 @@ export default function App() {
                                     <span className="text-xs font-bold uppercase tracking-widest">{method.label}</span>
                                  </button>
                                ))}
+                            </div>
+                            <div className="mt-4 pt-4 border-t border-slate-200/50 space-y-1.5">
+                               <label className="text-[9px] font-bold text-slate-500 uppercase">Aplicar Desconto (R$)</label>
+                               <input 
+                                 type="number" 
+                                 className="minimal-input h-8 text-xs font-bold" 
+                                 value={checkoutData.discount} 
+                                 onChange={e => setCheckoutData({...checkoutData, discount: parseFloat(e.target.value) || 0})}
+                                 placeholder="0,00"
+                               />
                             </div>
                          </div>
                       </div>
@@ -1781,10 +1986,13 @@ export default function App() {
                                   <div key={`charge-${c.id}`} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl group hover:border-slate-200">
                                      <div className="flex items-center gap-3">
                                         <div className="p-2 bg-blue-50 text-blue-500 rounded-lg"><ShoppingCart size={14} /></div>
-                                        <div><p className="text-sm font-bold text-slate-900">{item?.name}</p><p className="text-[10px] font-medium text-slate-400">{new Date(c.timestamp).toLocaleString()}</p></div>
+                                        <div><p className="text-sm font-bold text-slate-900 uppercase">{item?.name}</p><p className="text-[10px] font-medium text-slate-400">{new Date(c.timestamp).toLocaleString()}</p></div>
                                      </div>
                                      <div className="flex items-center gap-4">
-                                        <span className="text-sm font-black text-slate-900">{formatPrice(c.priceAtTime)}</span>
+                                        <div className="text-right">
+                                           <p className="text-sm font-black text-slate-900">{formatPrice(c.priceAtTime * c.quantity)}</p>
+                                           <p className="text-[10px] font-bold text-slate-400">{c.quantity}x {formatPrice(c.priceAtTime)}</p>
+                                        </div>
                                         <button onClick={() => removeCharge(showCheckoutConf, c.id)} className="text-slate-100 group-hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                                      </div>
                                   </div>
@@ -1814,7 +2022,7 @@ export default function App() {
         )}
 
         {showExpenseForm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowExpenseForm(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
+          <div key="modal-expense-form" className="fixed inset-0 z-[100] flex items-center justify-center p-6"><motion.div key="backdrop-expense-form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowExpenseForm(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div key="content-expense-form" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
             <h3 className="text-xl font-bold mb-6">Registrar Saída de Caixa</h3>
             <form onSubmit={addExpense} className="space-y-4">
               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">DESCRIÇÃO DA DESPESA</label><input type="text" required value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} className="minimal-input" placeholder="Ex: Conta de Luz, Compra de Estoque..." /></div>
@@ -1834,7 +2042,7 @@ export default function App() {
 
         {/* Existing Forms (Guest, Item, Checkin, etc) */}
         {showGuestForm && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowGuestForm(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-md bg-white rounded-2xl p-8 shadow-2xl">
+          <div key="modal-guest-form" className="fixed inset-0 z-[110] flex items-center justify-center p-6"><motion.div key="backdrop-guest-form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowGuestForm(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div key="content-guest-form" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-md bg-white rounded-2xl p-8 shadow-2xl">
             <h3 className="text-xl font-bold mb-6">Cadastrar Hóspede</h3>
             <form onSubmit={registerGuest} className="space-y-4">
               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">NOME COMPLETO</label><input type="text" required value={newGuest.name} onChange={e => setNewGuest({...newGuest, name: e.target.value})} className="minimal-input" placeholder="Nome Completo" /></div>
@@ -1842,7 +2050,8 @@ export default function App() {
                 <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">CPF</label><input type="text" required value={newGuest.cpf} onChange={e => setNewGuest({...newGuest, cpf: e.target.value})} className="minimal-input" placeholder="000.000.000-00" /></div>
                 <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">NASCIMENTO</label><input type="date" required value={newGuest.birthDate} onChange={e => setNewGuest({...newGuest, birthDate: e.target.value})} className="minimal-input" /></div>
               </div>
-              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">EMAIL</label><input type="email" required value={newGuest.email} onChange={e => setNewGuest({...newGuest, email: e.target.value})} className="minimal-input" placeholder="email@exemplo.com" /></div>
+              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">EMAIL (OPCIONAL)</label><input type="email" value={newGuest.email} onChange={e => setNewGuest({...newGuest, email: e.target.value})} className="minimal-input" placeholder="email@exemplo.com" /></div>
+              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">ENDEREÇO (OPCIONAL)</label><input type="text" value={newGuest.address} onChange={e => setNewGuest({...newGuest, address: e.target.value})} className="minimal-input" placeholder="Rua, Número, Bairro, Cidade - UF" /></div>
               <div className="flex gap-3 mt-8">
                 <button type="button" onClick={() => setShowGuestForm(false)} className="flex-1 py-2 text-sm font-semibold text-slate-400 hover:text-slate-900">Cancelar</button>
                 <button type="submit" className="flex-1 minimal-btn">Salvar Hóspede</button>
@@ -1852,7 +2061,7 @@ export default function App() {
         )}
 
         {showItemForm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowItemForm(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-md bg-white rounded-2xl p-8 shadow-2xl">
+          <div key="modal-item-form" className="fixed inset-0 z-[100] flex items-center justify-center p-6"><motion.div key="backdrop-item-form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowItemForm(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div key="content-item-form" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-md bg-white rounded-2xl p-8 shadow-2xl">
             <h3 className="text-xl font-bold mb-6">Novo Item / Serviço</h3>
             <form onSubmit={registerItem} className="space-y-4">
               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">NOME DO ITEM</label><input type="text" required value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="minimal-input" placeholder="Ex: Cerveja Lata, Almoço Executivo" /></div>
@@ -1861,7 +2070,9 @@ export default function App() {
               </select></div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">PREÇO UNITÁRIO</label><input type="number" step="0.01" required value={newItem.price} onChange={e => setNewItem({...newItem, price: parseFloat(e.target.value)})} className="minimal-input" /></div>
-                <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">ESTOQUE INICIAL</label><input type="number" required value={newItem.stock} onChange={e => setNewItem({...newItem, stock: parseInt(e.target.value)})} className="minimal-input" /></div>
+                {newItem.category !== 'service' && (
+                  <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-400">ESTOQUE INICIAL</label><input type="number" required value={newItem.stock} onChange={e => setNewItem({...newItem, stock: parseInt(e.target.value)})} className="minimal-input" /></div>
+                )}
               </div>
               <div className="flex gap-3 mt-8">
                 <button type="button" onClick={() => setShowItemForm(false)} className="flex-1 py-2 text-sm font-semibold text-slate-400 hover:text-slate-900">Cancelar</button>
@@ -1872,9 +2083,9 @@ export default function App() {
         )}
 
         {showReservationForm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setShowReservationForm(null); setEditingReservationId(null); setGuestSearchTerm(''); }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-md bg-white rounded-2xl p-8 shadow-2xl">
+          <div key="modal-reservation-form" className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div key="backdrop-reservation-form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setShowReservationForm(null); setEditingReservationId(null); setGuestSearchTerm(''); }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div key="content-reservation-form" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-md bg-white rounded-2xl p-8 shadow-2xl">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold uppercase tracking-tighter">
                   {editingReservationId ? 'Editar Reserva' : 'Nova Reserva'} - Quarto {rooms.find(r => r.id === showReservationForm)?.number}
@@ -1965,12 +2176,12 @@ export default function App() {
               <form onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
-                setInventory(inventory.map(i => i.id === editingInventoryItem.id ? {
-                  ...i,
+                saveDocument('inventory', {
+                  ...editingInventoryItem,
                   name: formData.get('name') as string,
                   price: Number(formData.get('price')),
                   category: formData.get('category') as ItemCategory
-                } : i));
+                });
                 setEditingInventoryItem(null);
               }} className="space-y-4">
                 <div className="space-y-1.5">
@@ -2002,7 +2213,7 @@ export default function App() {
         )}
 
         {showCheckIn && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setShowCheckIn(null); setGuestSearchTerm(''); }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
+          <div key="modal-check-in" className="fixed inset-0 z-[100] flex items-center justify-center p-6"><motion.div key="backdrop-check-in" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setShowCheckIn(null); setGuestSearchTerm(''); }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div key="content-check-in" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
             <h3 className="text-xl font-bold mb-6">Check-In Quarto {rooms.find(r => r.id === showCheckIn)?.number}</h3>
             <form onSubmit={handleCheckIn} className="space-y-5">
               <div className="space-y-2">
@@ -2080,7 +2291,7 @@ export default function App() {
               </div>
               <p className="text-[10px] text-slate-400 font-medium bg-slate-50 p-3 rounded-lg border border-slate-100 italic">O valor da reserva será calculado com base no número de diárias e categoria do quarto.</p>
               <div className="flex gap-3 mt-8">
-                <button type="button" onClick={() => { setShowCheckIn(null); setGuestSearchTerm(''); }} className="flex-1 text-sm font-semibold text-slate-400">Volar</button>
+                <button type="button" onClick={() => { setShowCheckIn(null); setGuestSearchTerm(''); }} className="flex-1 text-sm font-semibold text-slate-400">Voltar</button>
                 <button type="submit" className="flex-1 minimal-btn" disabled={!checkInData.guestId}>Confirmar</button>
               </div>
             </form>
@@ -2088,27 +2299,61 @@ export default function App() {
         )}
 
         {showAddCharge && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAddCharge(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" /><motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-lg bg-white rounded-2xl p-8 shadow-2xl h-[500px] flex flex-col">
-            <h3 className="text-xl font-bold mb-6">Lançar Consumo / Serviço</h3>
-            <div className="flex-1 overflow-auto divide-y divide-slate-50 pr-2">
-              {inventory.map(item => (
-                <div key={item.id} className="py-4 flex items-center justify-between group">
-                  <div>
-                    <p className="font-bold text-slate-900">{item.name}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">{item.category}</span>
-                      <span className="text-[10px] font-bold text-slate-400">{formatPrice(item.price)}</span>
-                      <span className="text-[10px] font-medium text-slate-400">• Estoque: {item.stock}</span>
-                    </div>
+          <div key="modal-add-charge" className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div key="backdrop-add-charge" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAddCharge(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div key="content-add-charge" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-lg bg-white rounded-2xl p-8 shadow-2xl h-[650px] flex flex-col">
+              <h3 className="text-xl font-bold mb-6 tracking-tighter uppercase">Lançar Consumo / Serviço</h3>
+              
+              <div className="flex-1 overflow-auto flex flex-col scrollbar-hide">
+                {/* Current Charges Section */}
+                <div className="mb-8">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Lançamentos atuais desta reserva</h4>
+                  <div className="space-y-2">
+                    {bookings.find(b => b.id === showAddCharge)?.charges.length === 0 && (
+                      <p className="text-xs text-slate-300 italic py-2">Nenhum consumo lançado ainda.</p>
+                    )}
+                    {bookings.find(b => b.id === showAddCharge)?.charges.map(charge => {
+                      const item = inventory.find(i => i.id === charge.itemId);
+                      return (
+                        <div key={charge.id} className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <div>
+                            <p className="text-xs font-black text-slate-900 uppercase">{item?.name || 'Item Removido'}</p>
+                            <p className="text-[10px] font-bold text-slate-400">{charge.quantity}x {formatPrice(charge.priceAtTime)} = {formatPrice(charge.quantity * charge.priceAtTime)}</p>
+                          </div>
+                          <button onClick={() => removeCharge(showAddCharge, charge.id)} className="p-2 text-slate-300 hover:text-red-500 transition-colors">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <button disabled={item.stock <= 0} onClick={() => addCharge(showAddCharge, item.id)} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all disabled:opacity-30">
-                    <Plus size={18} />
-                  </button>
+                  {bookings.find(b => b.id === showAddCharge)?.charges.length! > 0 && (
+                    <div className="mt-4 pt-4 border-t border-slate-100 text-right">
+                       <p className="text-[10px] font-black text-slate-400 uppercase">Subtotal Consumo</p>
+                       <p className="text-lg font-black text-slate-900">{formatPrice(bookings.find(b => b.id === showAddCharge)?.charges.reduce((s, c) => s + (c.priceAtTime * c.quantity), 0) || 0)}</p>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-            <button onClick={() => { setShowAddCharge(null); }} className="mt-8 minimal-btn w-full">Voltar</button>
-          </motion.div></div>
+
+                {/* Inventory Selection Section */}
+                <div>
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Adicionar novo item</h4>
+                  <div className="divide-y divide-slate-50">
+                    {inventory.map(item => (
+                      <div key={item.id}>
+                        <ItemChargeSelector 
+                          item={item} 
+                          onAdd={(qty) => addCharge(showAddCharge!, item.id, qty)} 
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              <button onClick={() => { setShowAddCharge(null); }} className="mt-8 py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-black transition-all shadow-lg shadow-slate-100">Concluir Lançamentos</button>
+            </motion.div>
+          </div>
         )}
 
         {showStockUpdate && (

@@ -11,7 +11,8 @@ export interface Guest {
   name: string;
   cpf: string;
   birthDate: string;
-  email: string;
+  email?: string;
+  address?: string;
 }
 
 export interface InventoryItem {
@@ -38,6 +39,7 @@ export interface Transaction {
   description: string;
   timestamp: number;
   refId?: string; // e.g., bookingId
+  paymentMethod?: 'cash' | 'card' | 'transfer' | 'pix';
 }
 
 export interface Booking {

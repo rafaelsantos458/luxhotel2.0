@@ -1,0 +1,113 @@
+{
+  "entities": {
+    "Guest": {
+      "title": "Guest",
+      "description": "Information about a guest",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "cpf": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" }
+      },
+      "required": ["id", "name", "cpf", "birthDate"]
+    },
+    "InventoryItem": {
+      "title": "Inventory Item",
+      "description": "Items in the hotel stock or services",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["beverage", "food", "service", "misc"] },
+        "price": { "type": "number" },
+        "stock": { "type": "number" }
+      },
+      "required": ["id", "name", "category", "price", "stock"]
+    },
+    "Charge": {
+      "title": "Charge",
+      "description": "A consumption or service charge added to a booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "itemId": { "type": "string" },
+        "quantity": { "type": "number" },
+        "priceAtTime": { "type": "number" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "itemId", "quantity", "priceAtTime", "timestamp"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Hotel reservation or stay",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "guestId": { "type": "string" },
+        "checkIn": { "type": "number" },
+        "checkOut": { "type": "number" },
+        "basePrice": { "type": "number" },
+        "charges": { "type": "array", "items": { "$ref": "Charge" } },
+        "status": { "type": "string", "enum": ["active", "completed", "canceled", "reserved"] },
+        "adults": { "type": "number" },
+        "children": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["cash", "card", "transfer", "pix"] },
+        "registeredBy": { "type": "string" }
+      },
+      "required": ["id", "roomId", "guestId", "checkIn", "checkOut", "basePrice", "status", "adults", "children"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "Hotel room details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "number": { "type": "string" },
+        "type": { "type": "string", "enum": ["single", "double", "couple", "triple"] },
+        "pricePerNight": { "type": "number" },
+        "status": { "type": "string", "enum": ["vago", "sujo", "manuntencao"] }
+      },
+      "required": ["id", "number", "type", "pricePerNight", "status"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction (income or expense)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "refId": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["cash", "card", "transfer", "pix"] }
+      },
+      "required": ["id", "type", "amount", "category", "description", "timestamp"]
+    },
+    "AppUser": {
+      "title": "App User",
+      "description": "Internal user of the system",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "receptionist"] }
+      },
+      "required": ["id", "name", "username", "role"]
+    }
+  },
+  "firestore": {
+    "guests": { "schema": "Guest", "description": "Collection of hotel guests" },
+    "inventory": { "schema": "InventoryItem", "description": "Collection of stock items and services" },
+    "bookings": { "schema": "Booking", "description": "Collection of reservations and stays" },
+    "rooms": { "schema": "Room", "description": "Collection of hotel rooms" },
+    "transactions": { "schema": "Transaction", "description": "Collection of financial logs" },
+    "users": { "schema": "AppUser", "description": "Collection of system users" }
+  }
+}

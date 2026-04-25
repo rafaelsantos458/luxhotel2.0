@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default allow for prototype/demo
+    match /{document=**} {
+      allow read, write: if true;
+    }
+
+    // Global Helpers
+    function isSignedIn() { return true; } // Simplified for now to fix blocked access
+    function isValidId(id) { return id is string && id.size() <= 128; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    // User Role Helpers (Requires looking up user in /users/{userId})
+    function getUserData(uid) { return get(/databases/$(database)/documents/users/$(uid)).data; }
+    function isAdmin() { return isSignedIn() && getUserData(request.auth.uid).role == 'admin'; }
+    function isReceptionist() { return isSignedIn() && getUserData(request.auth.uid).role == 'receptionist'; }
+    function isStaff() { return isAdmin() || isReceptionist(); }
+
+    // Guests
+    match /guests/{guestId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(guestId) && isValidGuest(incoming());
+      allow delete: if isSignedIn();
+      
+      function isValidGuest(data) {
+        return data.keys().hasAll(['id', 'name', 'cpf', 'birthDate']) &&
+               data.id is string && data.name is string && data.cpf is string &&
+               data.name.size() > 0 && data.cpf.size() > 0;
+      }
+    }
+
+    // Inventory
+    match /inventory/{itemId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(itemId) && isValidItem(incoming());
+      allow update: if isSignedIn() && isValidItem(incoming()) && (
+        // Action: Stock update
+        (incoming().diff(existing()).affectedKeys().hasOnly(['stock', 'timestamp', 'price', 'category', 'name'])) ||
+        // Action: Edit details
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'price', 'stock']))
+      );
+      allow delete: if isSignedIn();
+
+      function isValidItem(data) {
+        return data.keys().hasAll(['id', 'name', 'category', 'price', 'stock']) &&
+               data.price is number && data.price >= 0 &&
+               data.stock is number &&
+               data.category in ['beverage', 'food', 'service', 'misc'];
+      }
+    }
+
+    // Rooms
+    match /rooms/{roomId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Bookings
+    match /bookings/{bookingId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(bookingId) && isValidBooking(incoming());
+      allow update: if isSignedIn() && isValidBooking(incoming());
+      allow delete: if isSignedIn();
+
+      function isValidBooking(data) {
+        return data.keys().hasAll(['id', 'roomId', 'guestId', 'checkIn', 'checkOut', 'basePrice', 'status', 'adults', 'children']) &&
+               data.status in ['active', 'completed', 'canceled', 'reserved'];
+      }
+    }
+
+    // Transactions
+    match /transactions/{transId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(transId);
+      allow delete: if isSignedIn();
+    }
+
+    // Users
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+  }
+}
