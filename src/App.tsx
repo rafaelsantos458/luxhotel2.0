@@ -71,6 +71,30 @@ import {
 } from 'lucide-react';
 import { Guest, Room, Booking, AuthState, InventoryItem, RoomType, ItemCategory, Charge, Transaction, AppUser, UserRole } from './types.ts';
 
+function App() {
+
+  async function salvarCliente() {
+    await addDoc(collection(db, "clientes"), {
+      nome: "Rafael",
+      criadoEm: new Date()
+    });
+
+    console.log("Salvo no Firebase");
+  }
+
+  return (
+    <div>
+      <h1>Sistema</h1>
+
+      <button onClick={salvarCliente}>
+        Salvar Cliente
+      </button>
+    </div>
+  );
+}
+
+export default App;
+
 const formatPrice = (p: number) => `R$ ${p.toFixed(2).replace('.', ',')}`;
 
 const ItemChargeSelector = ({ item, onAdd }: { item: InventoryItem, onAdd: (qty: number) => void }) => {
