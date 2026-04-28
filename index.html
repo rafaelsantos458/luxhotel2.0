@@ -6,6 +6,35 @@
     <title>My Google AI Studio App</title>
   </head>
   <body>
+    <button onclick="reservar()">Reservar</button>
+    <script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+const supabase = createClient(
+  'https://oifjeezqwzboushdktvk.supabase.co',
+  'SUA_CHAVE_AQUI'
+)
+
+async function reservar() {
+  const { error } = await supabase
+    .from('reservations')
+    .insert([
+      {
+        room_name: 'Quarto Luxo',
+        user_name: 'Cliente Teste'
+      }
+    ])
+
+  if (error) {
+    alert('Erro ao reservar')
+    console.log(error)
+  } else {
+    alert('Reserva feita!')
+  }
+}
+
+window.reservar = reservar
+</script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
