@@ -28,8 +28,13 @@ import {
   startOfDay
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { loadStripe } from '@stripe/stripe-js';
 import { 
-  Hotel, 
+  EmbeddedCheckoutProvider,
+  EmbeddedCheckout
+} from '@stripe/react-stripe-js';
+import { 
+  Bed, 
   LogOut, 
   Plus, 
   Search, 
@@ -286,6 +291,8 @@ export default function App() {
   const [showCheckIn, setShowCheckIn] = useState<string | null>(null); // roomId
   const [showAddCharge, setShowAddCharge] = useState<string | null>(null); // bookingId
   const [showCheckoutConf, setShowCheckoutConf] = useState<string | null>(null); // bookingId
+  const [showRenewStay, setShowRenewStay] = useState<string | null>(null); // bookingId
+  const [renewDate, setRenewDate] = useState(format(addDays(new Date(), 1), 'yyyy-MM-dd'));
   const [checkoutData, setCheckoutData] = useState({ paymentMethod: 'cash' as 'cash' | 'card' | 'transfer' | 'pix', daysToCharge: 1, discount: 0 });
   const [roomConfig, setRoomConfig] = useState<string | null>(null); // roomId
   const [showGuestForm, setShowGuestForm] = useState(false);
@@ -321,6 +328,64 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ user: '', pass: '' });
   const [error, setError] = useState('');
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
+
+  // Check for payment status from URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const payment = urlParams.get('payment');
+    if (payment === 'success') {
+      setLandingView('register');
+      // You could also show a success notification here
+    } else if (payment === 'cancel') {
+      setError('O pagamento foi cancelado. Você pode tentar novamente.');
+    }
+  }, []);
+
+  const handleStripeCheckout = async (plan: { name: string, price: string, stripeProductId?: string }) => {
+    setIsProcessingPayment(true);
+    setError('');
+    const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+    
+    if (!publishableKey) {
+      setError('Configuração do Stripe incompleta: VITE_STRIPE_PUBLISHABLE_KEY não encontrada.');
+      setIsProcessingPayment(false);
+      return;
+    }
+
+    try {
+      const stripe = await loadStripe(publishableKey);
+      if (!stripe) throw new Error('Stripe failed to load');
+
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          planId: plan.name.toLowerCase(),
+          planName: plan.name,
+          price: plan.price,
+          stripeProductId: plan.stripeProductId
+        }),
+      });
+
+      const session = await response.json();
+      if (session.error) throw new Error(session.error);
+
+      if (session.clientSecret) {
+        setStripeClientSecret(session.clientSecret);
+      } else if (session.url) {
+        window.location.href = session.url;
+      } else {
+        throw new Error('Não foi possível gerar o checkout.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError('Houve um erro ao processar o pagamento. Verifique sua chave STRIPE no painel Settings.');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
 
   // Helper for tenant-scoped saving
   const saveTenantDoc = <T extends { tenantId?: string, id: string }>(coll: string, data: T) => {
@@ -586,6 +651,48 @@ export default function App() {
     setShowCheckoutConf(null);
   };
 
+  const handleRenewStay = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showRenewStay) return;
+    
+    const booking = bookings.find(b => b.id === showRenewStay);
+    if (!booking) return;
+    
+    const room = rooms.find(r => r.id === booking.roomId);
+    if (!room) return;
+    
+    // Normalize dates to mid-day to avoid TZ issues in day calculation
+    const newEndDate = new Date(renewDate + 'T12:00:00');
+    const oldEndDate = new Date(booking.checkOut);
+    const checkInDate = new Date(booking.checkIn);
+    
+    oldEndDate.setHours(12, 0, 0, 0);
+    checkInDate.setHours(12, 0, 0, 0);
+    
+    const newEnd = newEndDate.getTime();
+    const oldEnd = oldEndDate.getTime();
+    const checkInTime = checkInDate.getTime();
+    
+    if (newEnd < checkInTime) {
+      alert('A nova data de saída não pode ser anterior ao check-in.');
+      return;
+    }
+    
+    const diffDays = Math.round((newEnd - oldEnd) / (1000 * 60 * 60 * 24));
+    const addedPrice = (room.pricePerNight || 0) * diffDays;
+    
+    // Restore original checkout time (11:00 AM)
+    const finalCheckOut = new Date(renewDate + 'T11:00:00').getTime();
+    
+    saveTenantDoc('bookings', {
+      ...booking,
+      checkOut: finalCheckOut,
+      basePrice: booking.basePrice + addedPrice
+    });
+    
+    setShowRenewStay(null);
+  };
+
   const getRoomStatus = (roomId: string) => {
     const activeBooking = bookings.find(b => b.roomId === roomId && b.status === 'active');
     if (!activeBooking) {
@@ -775,26 +882,47 @@ export default function App() {
   };
 
   if (!auth.isAuthenticated) {
+    if (stripeClientSecret) {
+      const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="w-full max-w-4xl bg-white p-12 rounded-[40px] shadow-2xl relative">
+            <button 
+              onClick={() => setStripeClientSecret(null)}
+              className="absolute top-8 right-8 p-3 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
+            >
+              <X size={24} />
+            </button>
+            <h2 className="text-3xl font-black text-slate-900 mb-8">Pagamento Seguro</h2>
+            <div className="min-h-[600px]">
+              <EmbeddedCheckoutProvider
+                stripe={stripePromise}
+                options={{ clientSecret: stripeClientSecret }}
+              >
+                <EmbeddedCheckout />
+              </EmbeddedCheckoutProvider>
+            </div>
+            
+            <div className="mt-12 text-center pt-8 border-t border-slate-100">
+              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                Desenvolvido por <span className="text-blue-600">MyHub</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (landingView === 'home') {
       return (
         <div className="min-h-screen bg-[#fafafc] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
-          {/* Progress Bar for aesthetic */}
-          <div className="fixed top-0 left-0 w-full h-1.5 bg-indigo-50 z-50 overflow-hidden">
-            <motion.div 
-              initial={{ x: '-100%' }}
-              animate={{ x: '100%' }}
-              transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
-              className="w-1/3 h-full bg-indigo-600"
-            />
-          </div>
-
           {/* Nav */}
           <nav className="flex items-center justify-between px-10 py-8 max-w-7xl mx-auto">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-[0_10px_20px_-5px_rgba(0,0,0,0.3)]">
-                <Hotel size={26} strokeWidth={2.5} />
+                <Bed size={26} strokeWidth={2.5} fill="currentColor" />
               </div>
-              <span className="text-2xl font-black tracking-tighter"> Meu Hotel <span className="text-indigo-600">PRO</span></span>
+              <span className="text-2xl font-black tracking-tighter uppercase">Meu Hotel <span className="text-indigo-600">Online</span></span>
             </div>
             <div className="flex items-center gap-8">
               <button onClick={() => setLandingView('pricing')} className="text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors">Preços</button>
@@ -807,15 +935,15 @@ export default function App() {
             <div className="grid lg:grid-cols-2 gap-24 items-center">
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-[11px] font-black uppercase tracking-widest mb-8 border border-indigo-100/50">
-                  <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-pulse" />
-                  Plataforma de Gestão 2024
+                  <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full" />
+                  Meu Hotel Online
                 </div>
                 <h1 className="text-8xl font-black tracking-tighter text-slate-900 leading-[0.85] mb-10">
                   Gestão hoteleira <br/>
                   <span className="text-indigo-600">sem esforço.</span>
                 </h1>
                 <p className="text-2xl text-slate-500 font-medium leading-relaxed mb-12 max-w-xl">
-                  Simplifique seu checkout, controle seu estoque e maximize sua ocupação com a interface mais rápida do mercado.
+                  Sua pousada na palma da mão. Chega de planilhas confusas e anotações em papel. Assuma o controle total das suas reservas, estoque e financeiro com um sistema feito para quem não tem tempo a perder.
                 </p>
                 <div className="flex gap-4">
                   <button onClick={() => setLandingView('pricing')} className="px-12 py-6 bg-indigo-600 text-white rounded-3xl font-black text-sm uppercase tracking-[0.2em] hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-200 group flex items-center gap-3">
@@ -840,39 +968,77 @@ export default function App() {
               <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2, duration: 0.8 }} className="relative">
                 <div className="absolute -inset-10 bg-indigo-500/10 blur-[100px] rounded-full" />
                 
-                {/* Mock UI Preview */}
-                <div className="relative bg-white p-4 rounded-[42px] border border-slate-200 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] rotate-3 overflow-hidden aspect-[1.4] transition-transform hover:rotate-1 hover:scale-105 duration-700">
+                {/* Enhanced Mock UI Preview */}
+                <div className="relative bg-white p-4 rounded-[42px] border border-slate-200 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] rotate-3 overflow-hidden aspect-[1.4] transition-all hover:rotate-1 hover:scale-105 duration-700">
                   <div className="flex h-full gap-4">
                     {/* Mock Sidebar */}
-                    <div className="w-20 h-full bg-slate-50 rounded-[32px] flex flex-col items-center py-6 gap-6">
-                      <div className="w-10 h-10 bg-slate-900 rounded-2xl" />
-                      <div className="space-y-4">
-                        <div className="w-10 h-2 bg-indigo-200 rounded-full mx-auto" />
-                        <div className="w-10 h-2 bg-slate-200 rounded-full mx-auto" />
-                        <div className="w-10 h-2 bg-slate-200 rounded-full mx-auto" />
+                    <div className="w-16 h-full bg-slate-50 rounded-[32px] flex flex-col items-center py-8 gap-8 border border-slate-100">
+                      <div className="w-10 h-10 bg-indigo-600 shadow-lg shadow-indigo-100 rounded-2xl flex items-center justify-center text-white"><Bed size={20} strokeWidth={2.5} fill="currentColor" /></div>
+                      <div className="flex flex-col gap-6 opacity-40">
+                        <LayoutGrid size={20} />
+                        <Users size={20} />
+                        <Package size={20} />
+                        <TrendingUp size={20} />
                       </div>
                     </div>
                     {/* Mock Content */}
-                    <div className="flex-1 flex flex-col gap-4 py-2 pr-2">
-                      <div className="flex justify-between items-center bg-slate-50/50 p-4 rounded-3xl">
-                        <div className="h-3 w-32 bg-slate-200 rounded-full" />
-                        <div className="flex gap-2">
-                           <div className="w-8 h-8 rounded-full bg-white shadow-sm" />
-                           <div className="w-8 h-8 rounded-full bg-white shadow-sm" />
+                    <div className="flex-1 flex flex-col gap-6 py-4 pr-4">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="h-6 w-32 bg-slate-100 rounded-full mb-1" />
+                          <div className="h-3 w-48 bg-slate-50 rounded-full" />
                         </div>
+                        <div className="w-10 h-10 bg-slate-100 rounded-2xl" />
                       </div>
-                      <div className="grid grid-cols-4 gap-4 flex-1">
+                      
+                      {/* Occupancy Grid Mockup */}
+                      <div className="grid grid-cols-4 gap-3">
                         {[
-                          { s: 'occupied', n: '101' }, { s: 'vago', n: '102' }, { s: 'occupied', n: '103' }, { s: 'sujo', n: '104' },
-                          { s: 'vago', n: '201' }, { s: 'occupied', n: '202' }, { s: 'vago', n: '203' }, { s: 'occupied', n: '204' }
-                        ].map((r, idx) => (
-                          <div key={idx} className={`rounded-3xl p-4 flex flex-col justify-between border-2 transition-all ${r.s === 'occupied' ? 'bg-indigo-50 border-indigo-100 shadow-sm' : r.s === 'sujo' ? 'bg-amber-50 border-amber-100' : 'bg-white border-slate-100'}`}>
-                            <div className="text-[9px] font-black uppercase text-slate-400">{r.n}</div>
-                            <div className={`w-2.5 h-2.5 rounded-full ${r.s === 'occupied' ? 'bg-indigo-500 shadow-[0_0_10px_indigo]' : r.s === 'sujo' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                          { room: '101', color: 'bg-violet-600', text: 'Ocupado' },
+                          { room: '102', color: 'bg-emerald-500', text: 'Livre' },
+                          { room: '103', color: 'bg-violet-600', text: 'Ocupado' },
+                          { room: '104', color: 'bg-amber-400', text: 'Limpeza' },
+                          { room: '201', color: 'bg-emerald-500', text: 'Livre' },
+                          { room: '202', color: 'bg-violet-600', text: 'Ocupado' },
+                          { room: '203', color: 'bg-emerald-500', text: 'Livre' },
+                          { room: '204', color: 'bg-violet-600', text: 'Ocupado' },
+                        ].map((r, i) => (
+                          <div key={i} className={`${r.color} h-20 rounded-2xl flex flex-col justify-center items-center text-white shadow-lg`}>
+                            <span className="text-[10px] font-black">{r.room}</span>
+                            <span className="text-[7px] font-bold uppercase tracking-widest opacity-80">{r.text}</span>
                           </div>
                         ))}
                       </div>
+
+                      {/* Stats cards mockup */}
+                      <div className="flex gap-3">
+                        <div className="flex-1 h-20 bg-slate-50 rounded-2xl border border-slate-100 p-4">
+                           <div className="h-2 w-12 bg-slate-200 rounded-full mb-2" />
+                           <div className="h-4 w-24 bg-slate-300 rounded-full" />
+                        </div>
+                        <div className="flex-1 h-20 bg-slate-50 rounded-2xl border border-slate-100 p-4">
+                           <div className="h-2 w-12 bg-slate-200 rounded-full mb-2" />
+                           <div className="h-4 w-24 bg-slate-300 rounded-full" />
+                        </div>
+                      </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Overlays for depth */}
+                <div className="absolute -top-6 -right-6 bg-white p-5 rounded-3xl shadow-2xl border border-slate-100 flex items-center gap-4 animate-bounce duration-[3000ms] hidden lg:flex">
+                  <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600"><TrendingUp size={20} /></div>
+                  <div>
+                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Total Hoje</p>
+                    <p className="text-sm font-black text-slate-900">R$ 1.840,00</p>
+                  </div>
+                </div>
+
+                <div className="absolute -bottom-6 -left-6 bg-slate-900 text-white p-5 rounded-3xl shadow-2xl flex items-center gap-4 hidden lg:flex">
+                  <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center text-white"><CheckCircle2 size={20} /></div>
+                  <div>
+                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Checkout Sucesso</p>
+                    <p className="text-sm font-black">Suíte 104 finalizada</p>
                   </div>
                 </div>
 
@@ -892,16 +1058,77 @@ export default function App() {
               </motion.div>
             </div>
 
-            {/* Trusted by section style */}
+            {/* Comparison Section */}
+            <div className="mt-40 grid lg:grid-cols-2 gap-20 items-center bg-slate-900 rounded-[60px] p-20 text-white overflow-hidden relative">
+              <div className="absolute top-0 right-0 w-1/2 h-full bg-blue-600/10 blur-[120px]" />
+              <div>
+                <h2 className="text-4xl font-black mb-8 leading-tight">O fim do caos <br/> na sua recepção</h2>
+                <ul className="space-y-6">
+                  {[
+                    { old: 'Reservas anotadas em agenda de papel', new: 'Mapa digital com status em tempo real' },
+                    { old: 'Esquecer de cobrar o frigobar', new: 'Lançamento instantâneo no consumo' },
+                    { old: 'Não saber o lucro real do mês', new: 'Gráficos e relatórios automáticos' },
+                    { old: 'Demora para fechar a conta', new: 'Checkout pronto em 3 cliques' }
+                  ].map((item, idx) => (
+                    <li key={idx} className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2 text-slate-500 line-through text-sm">
+                        <X size={14} /> <span>{item.old}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-blue-400 font-bold">
+                        <CheckCircle2 size={16} /> <span>{item.new}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="bg-white/5 p-8 rounded-[40px] border border-white/10 backdrop-blur-sm">
+                <div className="flex flex-col gap-4">
+                  <div className="h-4 w-1/3 bg-white/20 rounded-full" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="h-32 bg-violet-600/40 rounded-3xl border border-violet-400/30 flex items-center justify-center font-black text-xs uppercase tracking-widest text-violet-50">Ocupado</div>
+                    <div className="h-32 bg-emerald-600/40 rounded-3xl border border-emerald-400/30 flex items-center justify-center font-black text-xs uppercase tracking-widest text-emerald-50">Vago</div>
+                  </div>
+                  <div className="h-4 w-1/2 bg-white/10 rounded-full mt-4" />
+                </div>
+              </div>
+            </div>
+
+            {/* Steps section */}
+            <div className="mt-40 text-center">
+              <h2 className="text-4xl font-black mb-20">Comece em 3 minutos</h2>
+              <div className="grid md:grid-cols-3 gap-12 relative">
+                <div className="absolute top-1/2 left-0 w-full h-0.5 bg-slate-100 -z-10 hidden md:block" />
+                {[
+                  { step: '01', title: 'Escolha seu plano', desc: 'Selecione o plano que melhor atende o tamanho da sua pousada.' },
+                  { step: '02', title: 'Cadastre os Quartos', desc: 'Adicione seus quartos e categorias em segundos.' },
+                  { step: '03', title: 'Abra as Reservas', desc: 'Pronto! Comece a gerenciar check-ins e check-outs imediatamente.' }
+                ].map((s, i) => (
+                  <div key={i} className="flex flex-col items-center">
+                    <div className="w-16 h-16 bg-white border-4 border-indigo-600 text-indigo-600 rounded-full flex items-center justify-center font-black text-xl mb-6 shadow-xl shadow-indigo-100">
+                      {s.step}
+                    </div>
+                    <h4 className="text-xl font-bold mb-2">{s.title}</h4>
+                    <p className="text-slate-500 text-sm">{s.desc}</p>
+                  </div>
+                ))}
+              </div>
+              <button 
+                onClick={() => setLandingView('pricing')}
+                className="mt-20 px-12 py-6 bg-indigo-600 text-white rounded-3xl font-black text-sm uppercase tracking-[0.2em] hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-200"
+              >
+                Quero automatizar minha pousada
+              </button>
+            </div>
+
             <div className="mt-40 pt-20 border-t border-slate-100">
                <div className="text-center mb-16">
-                  <span className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">Recursos Exclusivos</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">Por que sua pousada precisa do Meu Hotel Online?</span>
                </div>
                <div className="grid md:grid-cols-3 gap-12">
                   {[
-                    { title: 'Gestão Visual', desc: 'Mapa de ocupação interativo com atualização em tempo real por websocket.', icon: <LayoutGrid />, color: 'indigo' },
-                    { title: 'Inteligência Financeira', desc: 'Previsões de receita, controle de fluxo de caixa e relatórios fiscais.', icon: <TrendingUp />, color: 'emerald' },
-                    { title: 'Estoque Automatizado', desc: 'Baixa automática de frigobar e serviços integrados ao checkout.', icon: <Package />, color: 'blue' }
+                    { title: 'Chega de Overbooking', desc: 'Visualize todos os quartos em uma única tela. Saiba exatamente quem entra e quem sai, sem erros ou reservas duplicadas.', icon: <LayoutGrid />, color: 'indigo' },
+                    { title: 'Tudo O que Vendem', desc: 'Água, refri ou petiscos? Adicione itens diretamente na conta do hóspede. Você nunca mais vai esquecer de cobrar um consumo no checkout.', icon: <Package />, color: 'emerald' },
+                    { title: 'Controle Total', desc: 'Saiba quanto ganhou no dia, na semana ou no mês. Relatórios simples que qualquer dono de pousada entende de primeira.', icon: <TrendingUp />, color: 'blue' }
                   ].map((f, i) => (
                     <motion.div 
                       key={i} 
@@ -939,7 +1166,7 @@ export default function App() {
 
             <div className="grid md:grid-cols-3 gap-8">
               {[
-                { name: 'Mensal', price: '49,90', period: 'mês', color: 'slate', link: 'https://mpago.la/1V6TEW8' },
+                { name: 'Mensal', price: '49,90', period: 'mês', color: 'slate', link: 'https://mpago.la/1V6TEW8', stripeProductId: 'prod_UPoSi0tdBtCG9G' },
                 { name: 'Trimestral', price: '129,90', period: 'trimestre', color: 'blue', popular: true, link: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=SEU_LINK_TRIMESTRAL' },
                 { name: 'Anual', price: '529,90', period: 'ano', color: 'slate', link: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=SEU_LINK_ANUAL' },
               ].map((p, i) => (
@@ -963,17 +1190,21 @@ export default function App() {
                     ))}
                   </ul>
                   <button 
-                    onClick={() => { 
-                      window.open(p.link, '_blank');
-                      setRegisterData({...registerData, plan: p.name.toLowerCase()}); 
-                      setLandingView('register'); 
-                    }}
-                    className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${p.popular ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
+                    disabled={isProcessingPayment}
+                    onClick={() => handleStripeCheckout(p)}
+                    className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isProcessingPayment ? 'opacity-50 cursor-not-allowed animate-pulse' : ''} ${p.popular ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
                   >
-                    Assinar Agora
+                    {isProcessingPayment ? 'Iniciando...' : 'Assinar'}
                   </button>
                 </div>
               ))}
+            </div>
+            
+            {/* Footer Branding */}
+            <div className="mt-20 text-center py-10 border-t border-slate-100">
+              <p className="text-slate-400 text-sm font-bold flex items-center justify-center gap-2">
+                Desenvolvido por <span className="text-blue-600">MyHub</span>
+              </p>
             </div>
           </main>
         </div>
@@ -981,9 +1212,21 @@ export default function App() {
     }
 
     if (landingView === 'register') {
+      const isSuccess = new URLSearchParams(window.location.search).get('payment') === 'success';
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-white p-12 rounded-[40px] shadow-2xl border border-slate-100">
+            {isSuccess && (
+              <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[32px] mb-8 flex items-center gap-4">
+                <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-100">
+                  <CheckCircle2 size={24} />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-emerald-900 uppercase tracking-tighter line-height-none">Pagamento Confirmado!</p>
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5">Finalize seu cadastro abaixo</p>
+                </div>
+              </div>
+            )}
             <h2 className="text-3xl font-black text-slate-900 mb-2">Criar conta</h2>
             <p className="text-sm text-slate-500 font-medium mb-10">Cadastre seu hotel no plano selecionado.</p>
             
@@ -1008,6 +1251,12 @@ export default function App() {
               </button>
               <button type="button" onClick={() => setLandingView('login')} className="w-full text-center text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors">Já tenho conta</button>
             </form>
+
+            <div className="mt-12 text-center pt-8 border-t border-slate-100">
+              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                Desenvolvido por <span className="text-blue-600">MyHub</span>
+              </p>
+            </div>
           </motion.div>
         </div>
       );
@@ -1016,17 +1265,17 @@ export default function App() {
     if (landingView === 'login') {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm bg-white p-10 rounded-xl border border-slate-200 shadow-sm transition-all overflow-hidden">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm bg-white p-10 rounded-[40px] border border-slate-200 shadow-sm transition-all overflow-hidden">
             <div className="flex items-center gap-3 mb-10">
               <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-lg">
-                <Hotel size={24} strokeWidth={2.5} />
+                <Bed size={24} strokeWidth={2.5} fill="currentColor" />
               </div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-900">Meu Hotel</h1>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900">Meu Hotel Online</h1>
             </div>
             
             {!isRecovering ? (
               <>
-                <h2 className="text-xl font-semibold mb-2">Entrar no Sistema</h2>
+                <h2 className="text-xl font-semibold mb-2 text-slate-900">Entrar no Sistema</h2>
                 <p className="text-sm text-slate-500 mb-8 font-medium">Acesso restrito ao administrativo</p>
                 <form onSubmit={handleLogin} className="space-y-5">
                   <div className="space-y-1.5">
@@ -1041,9 +1290,15 @@ export default function App() {
                     {error && <p className={`text-[10px] font-black uppercase tracking-tight ${error.includes('sucesso') ? 'text-emerald-500' : 'text-red-500'}`}>{error}</p>}
                     <button type="button" onClick={() => { setIsRecovering(true); setError(''); }} className="text-[9px] text-slate-400 font-bold uppercase tracking-widest hover:text-slate-600 transition-colors ml-auto">Esqueci a senha</button>
                   </div>
-                  <button type="submit" className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg active:scale-95 mt-4">Acessar Painel</button>
+                  <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-blue-100 active:scale-95 mt-4">Acessar Painel</button>
                 </form>
-                <button onClick={() => setLandingView('home')} className="w-full mt-6 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Voltar para o site</button>
+                <button onClick={() => setLandingView('home')} className="w-full mt-10 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors">Voltar para o site</button>
+
+                <div className="mt-12 text-center pt-8 border-t border-slate-100">
+                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                    Desenvolvido por <span className="text-blue-600">MyHub</span>
+                  </p>
+                </div>
               </>
             ) : (
               <>
@@ -1092,9 +1347,9 @@ export default function App() {
       <aside className="w-64 h-full bg-white border-r border-slate-200 flex flex-col p-8 shrink-0">
         <div className="flex items-center gap-3 mb-12">
           <div className="w-8 h-8 bg-slate-900 text-white rounded-lg flex items-center justify-center shadow-md">
-            <Hotel size={18} strokeWidth={2.5} />
+            <Bed size={18} strokeWidth={2.5} fill="currentColor" />
           </div>
-          <h1 className="text-sm font-black tracking-tight text-slate-900 uppercase italic">Meu Hotel <span className="text-blue-600">PRO</span></h1>
+          <h1 className="text-sm font-black tracking-tight text-slate-900 uppercase">Meu Hotel <span className="text-blue-600">Online</span></h1>
         </div>
         <nav className="flex-1 space-y-2">
           <button onClick={() => setView('map')} className={`sidebar-item w-full ${view === 'map' ? 'active' : ''}`}><div className="sidebar-dot" /><LayoutGrid size={16} /> Mapa de Quartos</button>
@@ -1173,12 +1428,12 @@ export default function App() {
                     layout
                     whileHover={{ y: -4 }}
                     className={`relative p-4 rounded-2xl border transition-all h-[280px] flex flex-col justify-between overflow-hidden ${
-                      status === 'vago' ? (reservationToday && !booking ? 'bg-white border-emerald-200 ring-1 ring-emerald-50' : 'bg-white border-slate-200') :
+                      status === 'vago' ? (reservationToday && !booking ? 'bg-white border-emerald-200 ring-1 ring-emerald-50' : 'bg-emerald-50 border-emerald-200 ring-1 ring-emerald-50/50') :
                       status === 'sujo' ? 'bg-[#fefaf3] border-amber-200 ring-1 ring-amber-50' : 
                       status === 'manuntencao' ? 'bg-slate-50 border-slate-300 opacity-70' :
-                      status === 'occupied' ? 'bg-blue-50 border-blue-200 shadow-md ring-1 ring-blue-100' :
-                      status === 'expiring' ? 'bg-blue-50 border-amber-300 shadow-lg ring-2 ring-amber-500 ring-offset-1 animate-pulse' :
-                      'bg-blue-50 border-red-300 shadow-lg ring-2 ring-red-500 ring-offset-1'
+                      status === 'occupied' ? 'bg-violet-50 border-violet-200 shadow-md ring-1 ring-violet-100' :
+                      status === 'expiring' ? 'bg-violet-50 border-amber-300 shadow-lg ring-2 ring-amber-500 ring-offset-1 animate-pulse' :
+                      'bg-violet-50 border-red-300 shadow-lg ring-2 ring-red-500 ring-offset-1'
                     }`}
                   >
                     {/* Status Badges */}
@@ -1367,17 +1622,11 @@ export default function App() {
                          <div className="flex gap-1">
                             <button 
                               onClick={() => {
-                                const currentEnd = new Date(booking.checkOut);
-                                const newEnd = addDays(currentEnd, 1);
-                                const roomObj = rooms.find(r => r.id === booking.roomId);
-                                saveTenantDoc('bookings', { 
-                                  ...booking, 
-                                  checkOut: newEnd.getTime(),
-                                  basePrice: booking.basePrice + (roomObj?.pricePerNight || 0)
-                                });
+                                setRenewDate(format(new Date(booking.checkOut), 'yyyy-MM-dd'));
+                                setShowRenewStay(booking.id);
                               }} 
-                              title="Renovar 1 Diária"
-                              className="p-1.5 bg-blue-50 text-blue-600 border border-blue-100 rounded-lg hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                              title="Renovar Diárias"
+                              className="p-1.5 bg-violet-50 text-violet-600 border border-violet-100 rounded-lg hover:bg-violet-600 hover:text-white transition-all shadow-sm"
                             >
                               <CalendarPlus size={10} strokeWidth={2.5} />
                             </button>
@@ -1544,7 +1793,9 @@ export default function App() {
                          <tr key={room.id} className="group hover:bg-slate-50/50 transition-colors">
                             <td className="sticky left-0 z-10 bg-white group-hover:bg-slate-50/50 p-4 border-r border-b border-slate-100 transition-colors">
                                <p className="text-sm font-black text-slate-900">Q. {room.number}</p>
-                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{room.type}</p>
+                               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                 {roomCategories.find(c => c.value === room.type)?.label || room.type}
+                               </p>
                             </td>
                             {daysInMonth.map(day => {
                                const booking = getBookingForRoomAndDate(room.id, day);
@@ -1616,7 +1867,7 @@ export default function App() {
                         const statusMap: any = { vago: 'Livre', occupied: 'Ocupado', sujo: 'Sujo', manuntencao: 'Manutenção' };
                         const activeBooking = bookings.find(b => b.roomId === room.id && b.status === 'active');
                         const guestsCount = activeBooking ? (activeBooking.adults + activeBooking.children) : 0;
-                        return [room.number, statusMap[room.status] || room.status, room.type, guestsCount, `R$ ${room.pricePerNight}`];
+                        return [room.number, statusMap[room.status] || room.status, roomCategories.find(c => c.value === room.type)?.label || room.type, guestsCount, `R$ ${room.pricePerNight}`];
                       })
                     ];
                     const csvContent = csvRows.map(e => e.join(";")).join("\n");
@@ -1701,7 +1952,7 @@ export default function App() {
                           </div>
                         </td>
                         <td className="px-8 py-5">
-                          <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{room.type}</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase tracking-tighter">{roomCategories.find(c => c.value === room.type)?.label || room.type}</div>
                         </td>
                         <td className="px-8 py-5 text-sm font-mono font-bold text-slate-900">
                           {formatPrice(room.pricePerNight)}
@@ -2494,6 +2745,31 @@ export default function App() {
                 <div className="flex gap-3 pt-4">
                   <button type="button" onClick={() => { setShowChangePasswordModal(null); setNewPassword(''); }} className="flex-1 py-3 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 rounded-xl hover:bg-slate-100 transition-all">Cancelar</button>
                   <button type="submit" className="flex-1 px-6 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-emerald-600 transition-all uppercase text-[10px] tracking-widest shadow-lg shadow-slate-100">Atualizar</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+        {showRenewStay && (
+          <div key="modal-renew-stay" className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div key="backdrop-renew-stay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowRenewStay(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <motion.div key="content-renew-stay" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
+              <h3 className="text-xl font-black mb-6">Renovar Diária</h3>
+              <p className="text-xs text-slate-500 mb-6 font-medium">Selecione para quando deseja estender o check-out deste hóspede.</p>
+              <form onSubmit={handleRenewStay} className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nova Data de Saída</label>
+                  <input 
+                    type="date" 
+                    required 
+                    value={renewDate} 
+                    onChange={e => setRenewDate(e.target.value)} 
+                    className="minimal-input" 
+                  />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setShowRenewStay(null)} className="flex-1 py-3 text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 rounded-xl hover:bg-slate-100 transition-all">Cancelar</button>
+                  <button type="submit" className="flex-1 px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all uppercase text-[10px] tracking-widest shadow-lg shadow-indigo-100">Confirmar</button>
                 </div>
               </form>
             </motion.div>
