@@ -3,40 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <title>Meu Hotel</title>
   </head>
+
   <body>
-    <button onclick="reservar()">Reservar</button>
+    <button id="btnReservar">Reservar</button>
+
     <script type="module">
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+      import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
-const supabase = createClient(
-  'https://oifjeezqwzboushdktvk.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9pZmplZXpxd3pib3VzaGRrdHZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMjk4MjEsImV4cCI6MjA5MjcwNTgyMX0.p5VF55a64ghcmFOrp_iR3qHOdS3wcEQA85CTcOIb2LU'
-)
+      const supabase = createClient(
+        'https://oifjeezqwzboushdktvk.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+      )
 
-async function reservar() {
-  const { error } = await supabase
-    .from('reservations')
-    .insert([
-      {
-        room_name: 'Quarto Luxo',
-        user_name: 'Cliente Teste'
-      }
-    ])
+      const botao = document.getElementById('btnReservar')
 
-  if (error) {
-    alert('Erro ao reservar')
-    console.log(error)
-  } else {
-    alert('Reserva feita!')
-  }
-}
+      botao.addEventListener('click', async () => {
+        botao.disabled = true
 
-window.reservar = reservar
-</script>
+        const { data, error } = await supabase
+          .from('reservations')
+          .insert([
+            {
+              room_name: 'Quarto Luxo',
+              user_name: 'Cliente Teste'
+            }
+          ])
+
+        if (error) {
+          alert('Erro ao reservar')
+          console.log(error)
+          botao.disabled = false
+        } else {
+          console.log('Salvo:', data)
+          alert('Reserva feita com sucesso!')
+        }
+      })
+    </script>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
