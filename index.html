@@ -7,41 +7,7 @@
   </head>
 
   <body>
-    <button id="btnReservar">Reservar</button>
-
-    <script type="module">
-      import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
-
-      const supabase = createClient(
-        'https://oifjeezqwzboushdktvk.supabase.co',
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
-      )
-
-      const botao = document.getElementById('btnReservar')
-
-      botao.addEventListener('click', async () => {
-        botao.disabled = true
-
-        const { data, error } = await supabase
-          .from('reservations')
-          .insert([
-            {
-              room_name: 'Quarto Luxo',
-              user_name: 'Cliente Teste'
-            }
-          ])
-
-        if (error) {
-          alert('Erro ao reservar')
-          console.log(error)
-          botao.disabled = false
-        } else {
-          console.log('Salvo:', data)
-          alert('Reserva feita com sucesso!')
-        }
-      })
-    </script>
-
+  
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
