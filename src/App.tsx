@@ -71,7 +71,8 @@ import {
   Check,
   TrendingUp,
   ArrowLeft,
-  Send
+  Send,
+  Moon
 } from 'lucide-react';
 import { Guest, Room, Booking, AuthState, InventoryItem, RoomType, ItemCategory, Charge, Transaction, AppUser, UserRole } from './types.ts';
 
@@ -112,6 +113,7 @@ const ItemChargeSelector = ({ item, onAdd }: { item: InventoryItem, onAdd: (qty:
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, user: null });
+
   const [view, setView] = useState<'map' | 'guests' | 'inventory' | 'bookings' | 'finance' | 'users' | 'calendar' | 'booking-history' | 'occupancy'>('map');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showReservationForm, setShowReservationForm] = useState<string | null>(null); // roomId
@@ -1479,9 +1481,9 @@ export default function App() {
                             <select 
                               value={room.status} 
                               onChange={(e) => updateRoomStatus(room.id, e.target.value as any)}
-                              className={`text-[8px] font-black uppercase tracking-widest bg-transparent border-none cursor-pointer focus:ring-0 px-1 py-0.5 rounded appearance-none text-right hover:bg-slate-50 transition-colors ${
-                                room.status === 'vago' ? 'text-emerald-600 bg-emerald-50/50' : 
-                                room.status === 'sujo' ? 'text-amber-600 bg-amber-50/50' : 'text-red-600 bg-red-50/50'
+                              className={`text-[8px] font-black uppercase tracking-widest bg-transparent border-none cursor-pointer focus:ring-0 px-1 py-0.5 rounded appearance-none text-right hover:bg-white/10 transition-colors ${
+                                room.status === 'vago' ? 'text-emerald-600' : 
+                                room.status === 'sujo' ? 'text-amber-600' : 'text-red-600'
                               }`}
                             >
                               <option value="vago">VAGO</option>
@@ -1645,17 +1647,30 @@ export default function App() {
             <div className="minimal-card max-w-5xl mx-auto overflow-hidden">
                <div className="p-6 border-b border-slate-50 flex items-center justify-between">
                 <span className="card-label mb-0">Hóspedes Registrados</span>
-                <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" /><input type="text" placeholder="Filtrar por nome ou CPF..." className="pl-9 pr-4 py-2 bg-slate-50 border-none rounded-lg text-xs" /></div>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                  <input type="text" placeholder="Filtrar por nome ou CPF..." className="pl-9 pr-4 py-2 bg-slate-50 border-none rounded-lg text-xs" />
+                </div>
               </div>
               <table className="w-full">
                 <thead><tr className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><th className="px-6 py-4 text-left">Hóspede</th><th className="px-6 py-4 text-left">Documentação</th><th className="px-6 py-4 text-left">Contato</th><th className="px-6 py-4 text-right">Ação</th></tr></thead>
                 <tbody className="divide-y divide-slate-50">
                    {guests.map(g => (
                       <tr key={g.id} className="text-sm hover:bg-slate-50/40">
-                        <td className="px-6 py-5"><p className="font-bold text-slate-900">{g.name}</p><p className="text-[10px] text-slate-400 font-medium uppercase tracking-tight">Nasc: {g.birthDate}</p></td>
+                        <td className="px-6 py-5">
+                          <p className="font-bold text-slate-900">{g.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-tight">Nasc: {g.birthDate}</p>
+                        </td>
                         <td className="px-6 py-5 font-mono text-xs text-slate-600">{g.cpf}</td>
-                        <td className="px-6 py-5"><p className="text-slate-500 font-medium">{g.email || 'N/I'}</p><p className="text-[9px] text-slate-400 font-medium italic truncate max-w-[200px]">{g.address || 'Sem endereço registrado'}</p></td>
-                        <td className="px-6 py-5 text-right"><button onClick={() => deleteDocument('guests', g.id)} className="text-slate-100 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button></td>
+                        <td className="px-6 py-5">
+                          <p className="text-slate-500 font-medium">{g.email || 'N/I'}</p>
+                          <p className="text-[9px] text-slate-400 font-medium italic truncate max-w-[200px]">{g.address || 'Sem endereço registrado'}</p>
+                        </td>
+                        <td className="px-6 py-5 text-right">
+                          <button onClick={() => deleteDocument('guests', g.id)} className="text-slate-100 hover:text-red-500 p-2 transition-colors">
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
                       </tr>
                    ))}
                    {guests.length === 0 && <tr><td colSpan={4} className="py-24 text-center text-slate-300 text-sm font-medium italic">Banco de dados vazio.</td></tr>}
@@ -1895,7 +1910,7 @@ export default function App() {
                   { label: 'Total de Hóspedes', val: bookings.filter(b => b.status === 'active').reduce((acc, b) => acc + (b.adults || 0) + (b.children || 0), 0), sub: 'Hospedados agora', color: 'indigo' },
                   { label: 'Fora de Serviço', val: rooms.filter(r => r.status === 'manuntencao' || r.status === 'sujo').length, sub: 'Limpeza/Manutenção', color: 'amber' },
                 ].map((s, i) => (
-                  <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
+                  <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group transition-colors">
                     <div className="relative">
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">{s.label}</div>
                       <div className={`text-3xl font-black ${
@@ -1911,7 +1926,7 @@ export default function App() {
               </div>
 
               {/* Detail Table */}
-              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm transition-colors">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50/50">
@@ -2032,7 +2047,11 @@ export default function App() {
             <div className="minimal-card max-w-5xl mx-auto overflow-hidden">
                <div className="p-6 border-b border-slate-50 flex items-center justify-between">
                 <span className="card-label mb-0">Histórico de Estadias</span>
-                <div className="flex gap-2"><button className="p-1 px-3 bg-slate-50 rounded-lg text-[10px] font-bold text-slate-400">Todos</button><button className="p-1 px-3 bg-blue-50 rounded-lg text-[10px] font-bold text-blue-600">Ativos</button><button className="p-1 px-3 bg-emerald-50 rounded-lg text-[10px] font-bold text-emerald-600">Concluídos</button></div>
+                <div className="flex gap-2">
+                  <button className="p-1 px-3 bg-slate-50 rounded-lg text-[10px] font-bold text-slate-400">Todos</button>
+                  <button className="p-1 px-3 bg-blue-50 rounded-lg text-[10px] font-bold text-blue-600">Ativos</button>
+                  <button className="p-1 px-3 bg-emerald-50 rounded-lg text-[10px] font-bold text-emerald-600">Concluídos</button>
+                </div>
               </div>
               <div className="divide-y divide-slate-50">
                  {bookings.sort((a,b) => b.checkIn - a.checkIn).map(b => {
@@ -2040,7 +2059,7 @@ export default function App() {
                    const g = guests.find(gs => gs.id === b.guestId);
                    const total = b.basePrice + b.charges.reduce((sum, c) => sum + (c.priceAtTime * c.quantity), 0);
                    return (
-                     <div key={`history-${b.id}`} className="p-6 flex items-center justify-between hover:bg-slate-50/30">
+                     <div key={`history-${b.id}`} className="p-6 flex items-center justify-between hover:bg-slate-50/30 transition-colors">
                         <div className="flex gap-5 items-center">
                            <div className="w-14 h-14 bg-slate-900 text-white rounded-2xl flex items-center justify-center text-xl font-black shadow-lg">{r?.number}</div>
                            <div>
@@ -2053,6 +2072,19 @@ export default function App() {
                            </div>
                         </div>
                         <div className="flex items-center gap-6">
+                           {auth.user?.role === 'admin' && (
+                             <button 
+                               onClick={() => {
+                                 if (window.confirm('Deseja realmente excluir este registro do histórico?')) {
+                                   deleteDocument('bookings', b.id);
+                                 }
+                               }}
+                               className="p-3 bg-red-50 text-red-400 hover:text-red-600 rounded-xl transition-all border border-transparent hover:border-red-100 group"
+                               title="Excluir Registro"
+                             >
+                               <Trash2 size={18} className="group-hover:scale-110 transition-transform" />
+                             </button>
+                           )}
                            {b.status === 'completed' && (
                              <button 
                                onClick={() => g && generateReceipt(b, g)}
@@ -2131,8 +2163,8 @@ export default function App() {
         {roomConfig && (
           <div key="modal-room-config" className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div key="backdrop-room-config" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setRoomConfig(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div key="content-room-config" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
-              <h3 className="text-xl font-black mb-6 leading-tight uppercase tracking-tighter">Configurar Quarto</h3>
+            <motion.div key="content-room-config" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl border border-transparent">
+              <h3 className="text-xl font-black mb-6 leading-tight uppercase tracking-tighter text-slate-900">Configurar Quarto</h3>
               
               <div className="space-y-6">
                 <div className="space-y-2">
@@ -2151,7 +2183,7 @@ export default function App() {
                     {roomCategories.map(cat => (
                       <button 
                         key={cat.value} 
-                        onClick={() => updateRoomType(roomConfig, cat.value)}
+                        onClick={() => updateRoomType(roomConfig!, cat.value)}
                         className={`p-4 rounded-xl border-2 text-left transition-all ${rooms.find(r => r.id === roomConfig)?.type === cat.value ? 'border-blue-600 bg-blue-50/50' : 'border-slate-100 hover:border-slate-200'}`}
                       >
                         <p className="text-[10px] font-black uppercase text-slate-400 mb-1">{cat.label}</p>
@@ -2168,7 +2200,7 @@ export default function App() {
                         type="number" 
                         className="minimal-input font-bold" 
                         value={rooms.find(r => r.id === roomConfig)?.pricePerNight || 0}
-                        onChange={(e) => updateIndividualRoomPrice(roomConfig, parseFloat(e.target.value))}
+                        onChange={(e) => updateIndividualRoomPrice(roomConfig!, parseFloat(e.target.value))}
                       />
                    </div>
                    <p className="text-[9px] text-slate-400 italic">Alterar o preço aqui afetará apenas este quarto específico.</p>
@@ -2183,7 +2215,7 @@ export default function App() {
         {showCheckoutConf && (
           <div key="modal-checkout-conf" className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div key="backdrop-checkout-conf" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCheckoutConf(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div key="content-checkout-conf" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl bg-white rounded-3xl p-10 shadow-2xl flex flex-col max-h-[85vh]">
+            <motion.div key="content-checkout-conf" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl bg-white rounded-3xl p-10 shadow-2xl flex flex-col max-h-[85vh] border border-transparent">
              <div className="flex justify-between items-start mb-8">
                <div>
                   <h3 className="text-2xl font-black text-slate-900">Conferência de Checkout</h3>
@@ -2204,7 +2236,7 @@ export default function App() {
                return (
                  <>
                    <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-                      <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 grid grid-cols-2 gap-8">
+                      <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 grid grid-cols-2 gap-8 transition-colors">
                          <div>
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Informações de Diárias</p>
                             <div className="space-y-4">
@@ -2216,7 +2248,7 @@ export default function App() {
                                       onClick={() => setCheckoutData({...checkoutData, daysToCharge: Math.max(1, checkoutData.daysToCharge - 1)})}
                                       className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50"
                                      >-</button>
-                                     <span className="text-xl font-black w-10 text-center">{checkoutData.daysToCharge}</span>
+                                     <span className="text-xl font-black w-10 text-center text-slate-900">{checkoutData.daysToCharge}</span>
                                      <button 
                                       type="button"
                                       onClick={() => setCheckoutData({...checkoutData, daysToCharge: checkoutData.daysToCharge + 1})}
@@ -2724,20 +2756,20 @@ export default function App() {
         {showChangePasswordModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setShowChangePasswordModal(null); setNewPassword(''); }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl border border-transparent">
               <div className="mb-6">
-                <h3 className="text-xl font-black leading-tight">Alterar Senha</h3>
+                <h3 className="text-xl font-black leading-tight text-slate-900">Alterar Senha</h3>
                 <p className="text-[10px] text-slate-400 uppercase tracking-widest">Usuário: {users.find(u => u.id === showChangePasswordModal)?.username}</p>
               </div>
               <form onSubmit={handleUpdatePassword} className="space-y-6">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Nova Senha</label>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nova Senha</label>
                   <input 
                     type="password" 
                     required 
                     value={newPassword} 
                     onChange={e => setNewPassword(e.target.value)} 
-                    className="minimal-input font-mono" 
+                    className="minimal-input font-mono bg-white border-slate-200 text-slate-900" 
                     placeholder="••••••••"
                     autoFocus
                   />
@@ -2753,8 +2785,8 @@ export default function App() {
         {showRenewStay && (
           <div key="modal-renew-stay" className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div key="backdrop-renew-stay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowRenewStay(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div key="content-renew-stay" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
-              <h3 className="text-xl font-black mb-6">Renovar Diária</h3>
+            <motion.div key="content-renew-stay" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl border border-transparent">
+              <h3 className="text-xl font-black mb-6 text-slate-900">Renovar Diária</h3>
               <p className="text-xs text-slate-500 mb-6 font-medium">Selecione para quando deseja estender o check-out deste hóspede.</p>
               <form onSubmit={handleRenewStay} className="space-y-5">
                 <div className="space-y-1.5">
@@ -2787,8 +2819,8 @@ function FinanceCard({ label, value, icon, isTotal = false }: { label: string, v
           <span className={`p-3 rounded-2xl ${isTotal ? 'bg-white/10' : 'bg-slate-50'}`}>{icon}</span>
           <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-widest ${isTotal ? 'bg-white/10' : 'bg-slate-100 text-slate-400'}`}>HOJE</span>
        </div>
-       <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${isTotal ? 'text-slate-400' : 'text-slate-400'}`}>{label}</p>
-       <p className="text-3xl font-black">R$ {value.toFixed(2).replace('.', ',')}</p>
+       <p className={`text-xs font-bold uppercase tracking-widest mb-1 text-slate-400`}>{label}</p>
+       <p className="text-3xl font-black text-slate-900" style={isTotal ? {color: 'white'} : {}}>{formatPrice(value)}</p>
     </div>
   );
 }
